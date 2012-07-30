@@ -1,29 +1,50 @@
-article, aside, figure, footer, header, hgroup, menu, nav, section { display: block; }
+article,
+aside,
+figure,
+footer,
+header,
+hgroup,
+menu,
+nav,
+section {
+  display: block;
+}
+/*.......................................................the usual*/
 html {
   overflow-y: scroll;
   overflow-x: hidden;
 }
-html, body { height: 100%; }
+/* Always force a scrollbar in non-IE */
+html,
+body {
+  height: 100%;
+}
 body {
   background: url('../images/radial-gradient-bg.png') no-repeat top center;
   font-family: 'Droid Sans', Arial, sans-serif;
   color: #6c6f70;
   font-size: 12px;
+  background-color: #f5f3eb;
 }
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: Georgia, serif;
   text-transform: uppercase;
   letter-spacing: 4px;
   font-weight: normal;
-  color: #3f403f;
+  color: #343434;
 }
 a {
-  color: #af292e;
+  color: #095f59;
   text-decoration: none;
 }
-a:hover {
+a :hover {
   text-decoration: underline;
-  color: #af292e;
+  color: #095f59;
 }
 hr {
   background: url('../images/divider-line.png') repeat-x;
@@ -31,17 +52,21 @@ hr {
   height: 6px;
   margin-top: 3em;
 }
-.ls { letter-spacing: 2px; }
-.tac { text-align: center; }
+.ls {
+  letter-spacing: 2px;
+}
+.tac {
+  text-align: center;
+}
 header {
   width: 100%;
-  height: 195px;
+  height: 135px;
 }
 header #top-bar {
   width: 100%;
   height: 26px;
   background-color: #e2e2e2;
-  border-bottom: 1px solid #a2a5a4;
+  border-bottom: 1px solid #A2A5A4;
 }
 header #top-bar #social-media {
   width: 960px;
@@ -53,10 +78,18 @@ header #top-bar #social-media a {
   height: 26px;
   width: 60px;
 }
-header #top-bar #social-media a.facebook { background: url(../images/facebook.png) no-repeat center center; }
-header #top-bar #social-media a.facebook:hover { background: url(../images/facebook_white.png) no-repeat #b4b4b4 center center; }
-header #top-bar #social-media a.twitter { background: url(../images/twitter.png) no-repeat center center; }
-header #top-bar #social-media a.twitter:hover { background: url(../images/twitter_white.png) no-repeat #b4b4b4 center center; }
+header #top-bar #social-media a.facebook {
+  background: url(../images/facebook.png) no-repeat center center;
+}
+header #top-bar #social-media a.facebook :hover {
+  background: url(../images/facebook_white.png) no-repeat #b4b4b4 center center;
+}
+header #top-bar #social-media a.twitter {
+  background: url(../images/twitter.png) no-repeat center center;
+}
+header #top-bar #social-media a.twitter :hover {
+  background: url(../images/twitter_white.png) no-repeat #b4b4b4 center center;
+}
 header #top-bar #social-media img {
   float: right;
   padding: 8px 10px;
@@ -66,14 +99,14 @@ header hgroup {
   margin: 0 auto;
 }
 header hgroup #logo {
-  width: 181px;
-  height: 107px;
-  margin: 37px 0 0 11px;
+  width: 254px;
+  height: 57px;
+  margin: 45px 40px 0 35px;
   float: left;
 }
 header hgroup nav {
   float: left;
-  width: 768px;
+  width: 631px;
   height: 50px;
 }
 .container {
@@ -82,34 +115,25 @@ header hgroup nav {
   margin-bottom: -200px;
   position: relative;
 }
-#access .menu-header {
-  font-family: Georgia, serif;
-  float: right;
-  margin: 73px 96px 0 0;
-}
+/* =Menu
+-------------------------------------------------------------- */
+#access .menu-header,
 div.menu {
   font-family: Georgia, serif;
-  float: right;
-  margin: 73px 96px 0 0;
+  margin-top: 58px;
 }
-#access .menu-header ul {
-  list-style: none;
-  margin: 0;
-}
+#access .menu-header ul,
 div.menu ul {
   list-style: none;
   margin: 0;
 }
-#access .menu-header li {
-  float: left;
-  position: relative;
-}
+#access .menu-header li,
 div.menu li {
   float: left;
   position: relative;
 }
 #access a {
-  color: #3f403f;
+  color: #343434;
   display: block;
   line-height: 38px;
   padding: 0 10px;
@@ -128,7 +152,9 @@ div.menu li {
   width: 160px;
   z-index: 99999;
 }
-#access ul ul li { min-width: 160px; }
+#access ul ul li {
+  min-width: 160px;
+}
 #access ul ul ul {
   left: 100%;
   top: 0;
@@ -145,42 +171,49 @@ div.menu li {
   color: #6c6f70;
   font-size: 11px;
 }
-#access ul ul a:hover { text-decoration: underline; }
-#access li:hover > a {
+#access ul ul a :hover {
+  text-decoration: underline;
+}
+#access li:hover > a,
+#access ul ul :hover > a {
   text-decoration: none;
-  color: #af292e;
+  color: #095f59;
   -webkit-transition: all 0.5s ease;
   -moz-transition: all 0.5s ease;
   -o-transition: all 0.5s ease;
   transition: all 0.5s ease;
 }
-#access ul ul:hover > a {
-  text-decoration: none;
-  color: #af292e;
-  -webkit-transition: all 0.5s ease;
-  -moz-transition: all 0.5s ease;
-  -o-transition: all 0.5s ease;
-  transition: all 0.5s ease;
+#access ul li:hover > ul {
+  display: block;
 }
-#access ul li:hover > ul { display: block; }
-#access ul li.current_page_item > a { background: url('../images/active-page-arrow.png') no-repeat center 0; }
-#access ul li.current-menu-ancestor > a { background: url('../images/active-page-arrow.png') no-repeat center 0; }
-#access ul li.current-menu-item > a { background: url('../images/active-page-arrow.png') no-repeat center 0; }
-#access ul li.current-menu-parent > a { background: url('../images/active-page-arrow.png') no-repeat center 0; }
-#access ul ul li.current_page_item > a { background: none; }
-#access ul ul li.current-menu-ancestor > a { background: none; }
-#access ul ul li.current-menu-item > a { background: none; }
-#access ul ul li.current-menu-parent > a { background: none; }
-#access ul li.mdfdfenu-item > a { background: url(../images/drop-icon.gif) no-repeat; }
+#access ul li.current_page_item > a,
+#access ul li.current-menu-ancestor > a,
+#access ul li.current-menu-item > a,
+#access ul li.current-menu-parent > a {
+  background: url('../images/active-page-arrow.png') no-repeat center 0;
+}
+#access ul ul li.current_page_item > a,
+#access ul ul li.current-menu-ancestor > a,
+#access ul ul li.current-menu-item > a,
+#access ul ul li.current-menu-parent > a {
+  background: none;
+}
+#access ul li.mdfdfenu-item > a {
+  background: url(../images/drop-icon.gif) no-repeat;
+}
+/*.......................................................the footer*/
 #footer-bar {
   width: 100%;
-  background-color: #af292e;
+  background-color: #575757;
   height: 200px;
   margin-top: 220px;
   clear: both;
   position: relative;
 }
-#carousel { margin-top: 40px; }
+#carousel {
+  margin-top: 40px;
+  clear: both;
+}
 #carousel div.scroll-inst {
   text-align: center;
   text-transform: uppercase;
@@ -196,42 +229,32 @@ footer #site-info {
   position: relative;
   bottom: -100px;
   left: 30px;
-  color: #ffffff;
+  color: #fff;
   clear: both;
 }
-footer #site-info a { color: #ffffff; }
-#footer-menu .footer-nav {
-  font-family: Georgia, serif;
-  font-size: 0.9em;
-  float: left;
-  margin: 20px 0 0 5px;
+footer #site-info a {
+  color: #fff;
 }
+#footer-menu .footer-nav,
 div.menu {
   font-family: Georgia, serif;
   font-size: 0.9em;
   float: left;
   margin: 20px 0 0 5px;
 }
-#footer-menu .footer-nav ul {
-  list-style: none;
-  margin: 0;
-}
+#footer-menu .footer-nav ul,
 div.menu ul {
   list-style: none;
   margin: 0;
 }
-#footer-menu .footer-nav li {
-  float: left;
-  position: relative;
-  width: 155px;
-}
+#footer-menu .footer-nav li,
 div.menu li {
   float: left;
   position: relative;
   width: 155px;
 }
 #footer-menu a {
-  color: #ffffff;
+  color: #fff;
   display: block;
   line-height: 38px;
   padding: 0 10px;
@@ -239,6 +262,8 @@ div.menu li {
   text-transform: uppercase;
   font-weight: 500;
   letter-spacing: 2px;
+  /*margin-right: 50px;*/
+
 }
 #footer-menu ul ul {
   position: absolute;
@@ -248,7 +273,9 @@ div.menu li {
   width: 160px;
   z-index: 99999;
 }
-#footer-menu ul ul li { min-width: 160px; }
+#footer-menu ul ul li {
+  min-width: 160px;
+}
 #footer-menu ul ul ul {
   left: 100%;
   top: 0;
@@ -264,16 +291,26 @@ div.menu li {
   height: auto;
   font-size: 11px;
 }
-#footer-menu ul ul a:hover { text-decoration: underline; }
-#footer-menu li:hover > a { text-decoration: underline; }
-#footer-menu ul ul:hover > a { text-decoration: underline; }
-#footer-menu ul li:hover > ul { display: block; }
-#footer-menu a > a { background: url(../images/drop-icon.gif) no-repeat; }
+#footer-menu ul ul a :hover {
+  text-decoration: underline;
+}
+#footer-menu li:hover > a,
+#footer-menu ul ul :hover > a {
+  text-decoration: underline;
+}
+#footer-menu ul li:hover > ul {
+  display: block;
+}
+#footer-menu a > a {
+  background: url(../images/drop-icon.gif) no-repeat;
+}
+/*.......................................................the banner*/
 #banner-container {
   background: url('../images/banner-shadow.png') no-repeat scroll bottom left;
   width: 960px;
   height: 365px;
 }
+/*.......................................................the center content on homepage*/
 .center-content {
   margin: 23px 0px 45px 0px;
   padding: 0 10px;
@@ -285,6 +322,7 @@ div.menu li {
   text-align: center;
   font-size: 1.3em;
 }
+/*.......................................................the recent articles*/
 #recent-articles {
   width: 625px;
   height: 278px;
@@ -293,12 +331,16 @@ div.menu li {
   text-align: center;
 }
 #recent-articles h6 {
-  background-color: #f0f0f0;
+  background-color: #F0F0F0;
   padding: 5px 0;
   font-size: 0.8em;
 }
-#recent-articles h6 a { text-decoration: none; }
-#recent-articles h6 a:hover { text-decoration: underline; }
+#recent-articles h6 a {
+  text-decoration: none;
+}
+#recent-articles h6 a :hover {
+  text-decoration: underline;
+}
 #recent-articles article {
   background: #ebebeb;
   background: -webkit-gradient(linear, left top, left bottom, from(#e2e2e2), to(#ebebeb));
@@ -316,18 +358,23 @@ div.menu li {
   padding: 15px 20px;
   background: url('../images/ra-bubble-grey.png') no-repeat 567px 25px transparent;
 }
-#recent-articles article .frontpage-article:hover {
+#recent-articles article .frontpage-article :hover {
   background: url('../images/ra-bubble-crimson.png') no-repeat 560px 25px transparent;
-  border-left: 7px solid #af292e;
+  border-left: 7px solid #095f59;
   width: 585px;
   padding-left: 13px;
 }
-#recent-articles article .frontpage-article h2 { margin: -10px 0 4px 0; }
+#recent-articles article .frontpage-article h2 {
+  margin: -10px 0 4px 0;
+}
 #recent-articles article .frontpage-article h2 a {
   text-decoration: none;
   color: #6c6f70;
 }
-#recent-articles article .frontpage-article h2 a:hover { text-decoration: underline; }
+#recent-articles article .frontpage-article h2 a :hover {
+  text-decoration: underline;
+}
+/*.......................................................the newsletter*/
 #newsletter-signup {
   width: 295px;
   float: left;
@@ -361,17 +408,18 @@ div.menu li {
   padding: 0 5px;
 }
 #newsletter-signup form input[type="submit"] {
-  background-color: #af292e;
+  background-color: #095f59;
   height: 25px;
   width: 255px;
   border: 1px solid #a2a5a4;
-  color: #ffffff;
+  color: #fff;
   font-family: Georgia, serif;
   text-transform: uppercase;
   letter-spacing: 4px;
   font-weight: normal;
   cursor: pointer;
 }
+/*.......................................................the scroller*/
 #scroller {
   background: url('../images/bottom-scroll.jpg') no-repeat scroll top left;
   width: 960px;
@@ -379,6 +427,7 @@ div.menu li {
   position: relative;
   top: 20px;
 }
+/*.......................................................the misc stuff*/
 #content-container {
   float: left;
   margin-right: 40px;
@@ -391,39 +440,51 @@ div.menu li {
   width: 100%;
   background: url('../images/divider-line.png') top left repeat-x;
 }
-.mcontent { padding: 40px 15px; }
-.mcontent h1 {
-  text-align: center;
-  letter-spacing: 8px;
+.mcontent {
+  padding: 40px 15px;
 }
+.mcontent h1,
 .mcontent h2 {
   text-align: center;
   letter-spacing: 8px;
 }
-.mcontent h1.entry-title {
-  font-size: 2em;
-  margin-bottom: 0.75em;
-}
+.mcontent h1.entry-title,
 .mcontent h1.page-title {
   font-size: 2em;
   margin-bottom: 0.75em;
 }
-.breadcrumbs { margin: 55px 0 15px 0; }
-#page { min-height: 100%; }
+/*.......................................................the breadcrumbs*/
+.breadcrumbs {
+  margin: 55px 0 15px 0;
+}
+#page {
+  min-height: 100%;
+}
+/*.......................................................the sidebar*/
 #sidebar {
   width: 204px;
   float: left;
-  border-left: 1px solid #e3e3e3;
+  border-left: 1px solid #E3E3E3;
   padding-left: 5px;
   min-height: 100%;
   margin-bottom: 40px;
 }
-#sidebar ul { margin: 0; }
-#sidebar ol { margin: 0; }
-.widget-area ul { list-style: none; }
-.widget-area a { color: #6c6f70; }
-.widget-area a:hover { color: #af292e; }
-.widget-area ul.primary li.widget-container { margin-bottom: 1em; }
+#sidebar ul,
+#sidebar ol {
+  margin: 0;
+}
+.widget-area ul {
+  list-style: none;
+}
+.widget-area a {
+  color: #6c6f70;
+}
+.widget-area a :hover {
+  color: #095f59;
+}
+.widget-area ul.primary li.widget-container {
+  margin-bottom: 1em;
+}
 .widget-area ul.primary li.widget-container:nth-child(2n) h3 {
   background: url('../images/widget-title-bg-grey.png') no-repeat scroll top left;
   color: #6c6f70;
@@ -431,7 +492,7 @@ div.menu li {
 .widget-area ul.primary h3.widget-title {
   font-size: 0.8em;
   text-align: center;
-  color: #ffffff;
+  color: #fff;
   background: url('../images/wiget-title-bg-red.png') no-repeat scroll top left;
   width: 187px;
   height: 23px;
@@ -451,15 +512,24 @@ div.menu li {
   text-align: center;
   line-height: 1.3;
 }
-#comments { clear: both; }
-#comments .navigation { padding: 0 0 18px 0; }
-h3#comments-title, h3#reply-title {
-  color: #000000;
+/* =Comments
+-------------------------------------------------------------- */
+#comments {
+  clear: both;
+}
+#comments .navigation {
+  padding: 0 0 18px 0;
+}
+h3#comments-title,
+h3#reply-title {
+  color: #000;
   font-size: 20px;
   font-weight: bold;
   margin-bottom: 0;
 }
-h3#comments-title { padding: 24px 0; }
+h3#comments-title {
+  padding: 24px 0;
+}
 .commentlist {
   list-style: none;
   margin: 0;
@@ -475,44 +545,57 @@ h3#comments-title { padding: 24px 0; }
   border-bottom: none;
   margin-bottom: 0;
 }
-#comments .comment-body ul { margin-bottom: 18px; }
-#comments .comment-body ol { margin-bottom: 18px; }
-#comments .comment-body p:last-child { margin-bottom: 6px; }
-#comments .comment-body blockquote p:last-child { margin-bottom: 24px; }
-.commentlist ol { list-style: decimal; }
+#comments .comment-body ul,
+#comments .comment-body ol {
+  margin-bottom: 18px;
+}
+#comments .comment-body p:last-child {
+  margin-bottom: 6px;
+}
+#comments .comment-body blockquote p:last-child {
+  margin-bottom: 24px;
+}
+.commentlist ol {
+  list-style: decimal;
+}
 .commentlist .avatar {
   position: absolute;
   top: 4px;
   left: 0;
 }
 .comment-author cite {
-  color: #000000;
+  color: #000;
   font-style: normal;
   font-weight: bold;
 }
-.comment-author .says { font-style: italic; }
+.comment-author .says {
+  font-style: italic;
+}
 .comment-meta {
   font-size: 12px;
   margin: 0 0 18px 0;
 }
-.comment-meta a:link {
-  color: #888888;
-  text-decoration: none;
-}
+.comment-meta a:link,
 .comment-meta a:visited {
-  color: #888888;
+  color: #888;
   text-decoration: none;
 }
-.comment-meta a:active { color: #ff4b33; }
-.comment-meta a:hover { color: #ff4b33; }
+.comment-meta a:active,
+.comment-meta a:hover {
+  color: #ff4b33;
+}
 .reply {
   font-size: 12px;
   padding: 0 0 24px 0;
 }
-.reply a { color: #888888; }
-a.comment-edit-link { color: #888888; }
-.reply a:hover { color: #ff4b33; }
-a.comment-edit-link:hover { color: #ff4b33; }
+.reply a,
+a.comment-edit-link {
+  color: #888;
+}
+.reply a:hover,
+a.comment-edit-link:hover {
+  color: #ff4b33;
+}
 .commentlist .children {
   list-style: none;
   margin: 0;
@@ -521,15 +604,20 @@ a.comment-edit-link:hover { color: #ff4b33; }
   border: none;
   margin: 0;
 }
-.nopassword, .nocomments { display: none; }
+.nopassword,
+.nocomments {
+  display: none;
+}
 #comments .pingback {
   border-bottom: 1px solid #e7e7e7;
   margin-bottom: 18px;
   padding-bottom: 18px;
 }
-.commentlist li.comment + li.pingback { margin-top: -6px; }
+.commentlist li.comment + li.pingback {
+  margin-top: -6px;
+}
 #comments .pingback p {
-  color: #888888;
+  color: #888;
   display: block;
   font-size: 12px;
   line-height: 18px;
@@ -539,20 +627,37 @@ a.comment-edit-link:hover { color: #ff4b33; }
   font-size: 13px;
   font-style: italic;
 }
-input[type=submit] { color: #333333; }
+/* Comments form */
+input[type=submit] {
+  color: #333;
+}
 #respond {
   border-top: 1px solid #e7e7e7;
   margin: 24px 0;
   overflow: hidden;
   position: relative;
 }
-#respond p { margin: 0; }
-#respond .comment-notes { margin-bottom: 1em; }
-.form-allowed-tags { line-height: 1em; }
-.children #respond { margin: 0 48px 0 0; }
-h3#reply-title { margin: 18px 0; }
-#comments-list #respond { margin: 0 0 18px 0; }
-#comments-list ul #respond { margin: 0; }
+#respond p {
+  margin: 0;
+}
+#respond .comment-notes {
+  margin-bottom: 1em;
+}
+.form-allowed-tags {
+  line-height: 1em;
+}
+.children #respond {
+  margin: 0 48px 0 0;
+}
+h3#reply-title {
+  margin: 18px 0;
+}
+#comments-list #respond {
+  margin: 0 0 18px 0;
+}
+#comments-list ul #respond {
+  margin: 0;
+}
 #cancel-comment-reply-link {
   font-size: 12px;
   font-weight: normal;
@@ -563,76 +668,114 @@ h3#reply-title { margin: 18px 0; }
   font-weight: bold;
 }
 #respond label {
-  color: #888888;
+  color: #888;
   font-size: 12px;
 }
 #respond input {
   margin: 0 0 9px;
   width: 98%;
 }
-#respond textarea { width: 98%; }
+#respond textarea {
+  width: 98%;
+}
 #respond .form-allowed-tags {
-  color: #888888;
+  color: #888;
   font-size: 12px;
   line-height: 18px;
 }
-#respond .form-allowed-tags code { font-size: 11px; }
-#respond .form-submit { margin: 12px 0; }
+#respond .form-allowed-tags code {
+  font-size: 11px;
+}
+#respond .form-submit {
+  margin: 12px 0;
+}
 #respond .form-submit input {
   font-size: 14px;
   width: auto;
 }
-img.size-auto, img.size-full, img.size-large, img.size-medium {
-  max-width: 100%;
-  height: auto;
-}
+/* =Images
+-------------------------------------------------------------- */
+/*
+Resize images to fit the page content area.
+- Applies only to images uploaded via WordPress by targeting size-* classes.
+- Other images will be left alone. Use "size-auto" class to apply to other images.
+*/
+img.size-auto,
+img.size-full,
+img.size-large,
+img.size-medium,
 .attachment img {
   max-width: 100%;
+  /* When images are too wide for containing element, force them to fit. */
+
   height: auto;
+  /* Override height to match resized width for correct aspect ratio. */
+
 }
-.alignleft, img.alignleft {
+.alignleft,
+img.alignleft {
   display: inline;
   float: left;
   margin-right: 30px;
 }
-.alignright, img.alignright {
+.alignright,
+img.alignright {
   display: inline;
   float: right;
   margin-left: 20px;
   margin-top: 4px;
 }
-.aligncenter, img.aligncenter {
+.aligncenter,
+img.aligncenter {
   clear: both;
   display: block;
   margin-left: auto;
   margin-right: auto;
 }
-img.alignleft, img.alignright, img.aligncenter { margin-bottom: 12px; }
+img.alignleft,
+img.alignright,
+img.aligncenter {
+  margin-bottom: 12px;
+}
 .wp-caption {
   background: #f1f1f1;
   line-height: 18px;
   margin-bottom: 20px;
   max-width: 632px !important;
+  /* prevent too-wide images from breaking layout */
+
   padding: 4px;
   text-align: center;
 }
-.wp-caption img { margin: 5px 5px 0; }
+.wp-caption img {
+  margin: 5px 5px 0;
+}
 .wp-caption p.wp-caption-text {
-  color: #888888;
+  color: #888;
   font-size: 12px;
   margin: 5px;
 }
-.wp-smiley { margin: 0; }
-.gallery { margin: 0 auto 18px; }
+.wp-smiley {
+  margin: 0;
+}
+.gallery {
+  margin: 0 auto 18px;
+}
 .gallery .gallery-item {
   float: left;
   margin-top: 0;
   text-align: center;
   width: 33%;
 }
-.gallery-columns-2 .gallery-item { width: 50%; }
-.gallery-columns-4 .gallery-item { width: 25%; }
-.gallery img { border: 2px solid #cfcfcf; }
+.gallery-columns-2 .gallery-item {
+  width: 50%;
+}
+.gallery-columns-4 .gallery-item {
+  width: 25%;
+}
+.gallery img {
+  border: 2px solid #cfcfcf;
+}
 .gallery-columns-2 .attachment-medium {
   max-width: 92%;
   height: auto;
@@ -642,17 +785,26 @@ img.alignleft, img.alignright, img.aligncenter { margin-bottom: 12px; }
   height: auto;
 }
 .gallery .gallery-caption {
-  color: #888888;
+  color: #888;
   font-size: 12px;
   margin: 0 0 12px;
 }
-.gallery dl { margin: 0; }
-.gallery img { border: 10px solid #f1f1f1; }
-.gallery br + br { display: none; }
+.gallery dl {
+  margin: 0;
+}
+.gallery img {
+  border: 10px solid #f1f1f1;
+}
+.gallery br + br {
+  display: none;
+}
 #content .attachment img {
+  /* single attachment images should be centered */
+
   display: block;
   margin: 0 auto;
 }
+/*.......................................................the author info*/
 #entry-author-info {
   background: #ebebeb;
   background: -webkit-gradient(linear, left top, left bottom, from(#e2e2e2), to(#ebebeb));
@@ -662,7 +814,7 @@ img.alignleft, img.alignright, img.aligncenter { margin-bottom: 12px; }
   background: -o-linear-gradient(#e2e2e2, #ebebeb);
   background: linear-gradient(#e2e2e2, #ebebeb);
   border: 1px solid #e2e2e2;
-  border-left: 7px solid #af292e;
+  border-left: 7px solid #095f59;
   clear: both;
   font-size: 14px;
   line-height: 20px;
@@ -681,37 +833,42 @@ img.alignleft, img.alignright, img.aligncenter { margin-bottom: 12px; }
   margin: 0 0 0 90px;
 }
 #entry-author-info h2 {
-  color: #000000;
+  color: #000;
   font-size: 100%;
   margin-bottom: 0;
   text-align: left;
   letter-spacing: normal;
 }
+/*.......................................................the posts*/
 .entry-meta {
   margin-bottom: 1em;
   font-family: Georgia, serif;
   border-bottom: 1px solid #e2e2e2;
-  border-left: solid 2px #af292e;
+  border-left: solid 2px #095f59;
   padding-left: 5px;
 }
 h3.entry-title a {
-  color: #3f403f;
+  color: #343434;
   -webkit-transition: all 0.5s ease;
   -moz-transition: all 0.5s ease;
   -o-transition: all 0.5s ease;
   transition: all 0.5s ease;
 }
-h3.entry-title a:hover {
-  background: #af292e;
-  color: #ffffff;
+h3.entry-title a :hover {
+  background: #095f59;
+  color: #fff;
   -webkit-transition: all 0.5s ease;
   -moz-transition: all 0.5s ease;
   -o-transition: all 0.5s ease;
   transition: all 0.5s ease;
   text-decoration: none;
 }
-#author-link { margin-top: 1em; }
-.author-summary { padding-top: 20px; }
+#author-link {
+  margin-top: 1em;
+}
+.author-summary {
+  padding-top: 20px;
+}
 .author-name {
   font-size: 1em;
   font-family: 'Droid Sans', Arial, sans-serif;
@@ -720,7 +877,7 @@ h3.entry-title a:hover {
 }
 .author-name-single {
   font-family: Georgia, serif;
-  color: #3f403f;
+  color: #343434;
   text-transform: none;
   letter-spacing: normal;
 }
@@ -728,7 +885,9 @@ h3.entry-title a:hover {
   clear: both;
   margin-bottom: 45px;
 }
-.type-authors a img { margin-right: 15px; }
+.type-authors a img {
+  margin-right: 15px;
+}
 .author-headshot {
   float: left;
   width: 125px;
@@ -740,7 +899,9 @@ h3.entry-title a:hover {
   height: auto;
   margin-right: 70px;
 }
-.box:last-child { margin-right: 0; }
+.box :last-child {
+  margin-right: 0;
+}
 .box img {
   opacity: 0.8;
   -webkit-transition: all 0.5s ease;
@@ -748,16 +909,22 @@ h3.entry-title a:hover {
   -o-transition: all 0.5s ease;
   transition: all 0.5s ease;
 }
-.box img:hover {
+.box img :hover {
   opacity: 10;
   -webkit-transition: all 0.5s ease;
   -moz-transition: all 0.5s ease;
   -o-transition: all 0.5s ease;
   transition: all 0.5s ease;
 }
-.box:nth-child(5n) { margin-right: 0; }
-.last { margin-right: 0; }
-.author-entry-summary { height: 155px; }
+.box:nth-child(5n) {
+  margin-right: 0;
+}
+.last {
+  margin-right: 0;
+}
+.author-entry-summary {
+  height: 155px;
+}
 .mce_inline_error {
   padding: 0 !important;
   margin: 0 !important;
@@ -767,7 +934,15 @@ audio {
   margin-left: -35px;
   display: none;
 }
-input[type="text"], input[type="password"], input[type="url"], input[type="email"], input.text, input.title, select { height: 20px; }
+input[type="text"],
+input[type="password"],
+input[type="url"],
+input[type="email"],
+input.text,
+input.title,
+select {
+  height: 20px;
+}
 iframe {
   display: block;
   margin: 0 auto;
@@ -775,17 +950,19 @@ iframe {
 input#ns_widget_mailchimp-email-4 {
   width: 174px;
   height: 28px;
-  border: 1px solid #a2a5a4;
+  border: 1px solid #A2A5A4;
   font-family: 'Droid Sans', Arial, sans-serif;
   padding: 0 5px;
 }
-form#ns_widget_mailchimp_form-4:after { content: url(../images/letter-sb.png); }
+form#ns_widget_mailchimp_form-4:after {
+  content: url(../images/letter-sb.png);
+}
 form#ns_widget_mailchimp_form-4 input.button {
   margin-bottom: 20px;
-  background-color: #af292e;
+  background-color: #AF292E;
   height: 25px;
   width: 186px;
-  border: 1px solid #a2a5a4;
+  border: 1px solid #A2A5A4;
   color: white;
   font-family: Georgia, serif;
   text-transform: uppercase;
@@ -793,16 +970,13 @@ form#ns_widget_mailchimp_form-4 input.button {
   font-weight: normal;
   cursor: pointer;
 }
-form#ns_widget_mailchimp_form-4 label { font-weight: normal; }
-img.cat-image { margin-top: -10px; }
+form#ns_widget_mailchimp_form-4 label {
+  font-weight: normal;
+}
+img.cat-image {
+  margin-top: -10px;
+}
 h1.cat-title {
   text-align: left;
   margin-left: 155px;
-}
-img#wpstats {
-  position: absolute;
-  top: 0;
-  width: 0px;
-  height: 0px;
-  overflow: hidden;
 }

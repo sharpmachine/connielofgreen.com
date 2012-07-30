@@ -1,5 +1,4 @@
-<hr>
-			
+<div style="clear:both;">&nbsp;</div>
 <div id="carousel">
 	<div class="slides_container">
 	<?php query_posts('post_type=scroller_ads'); ?>

@@ -2,10 +2,13 @@
   menu, nav, section { display: block; }
 
 @slingstone-type-grey: #6C6F70;
-@slingstone-logo-grey: #3F403F;
 @slingstone-lite-grey: #E2E2E2;
 @border-grey: #a2a5a4;
-@slingstone-red: #AF292E;
+
+@cl-green: #095f59;
+@cl-cream: #f5f3eb;
+@type-grey: #343434;
+@dark-grey: #575757;
 
 .gradient(@start:#E2E2E2, @stop:#EBEBEB) {
    background: @stop;
@@ -39,6 +42,7 @@ html, body
   	font-family: 'Droid Sans', Arial, sans-serif;
   	color: @slingstone-type-grey;
   	font-size: 12px;
+	background-color: @cl-cream;
   }
   
 h1, h2, h3, h4, h5, h6
@@ -47,12 +51,12 @@ h1, h2, h3, h4, h5, h6
 	text-transform: uppercase;
 	letter-spacing: 4px;
 	font-weight: normal;
-	color: @slingstone-logo-grey;
+	color: @type-grey;
 }
 
 a
 {
-	color: @slingstone-red;
+	color: @cl-green;
 	text-decoration: none;
 }
 
@@ -61,7 +65,7 @@ a
 	:hover
 	{
 		text-decoration: underline;
-		color: @slingstone-red;
+		color: @cl-green;
 	}
 }
 
@@ -86,7 +90,7 @@ hr
 header
 {
 	width: 100%;
-	height: 195px;
+	height: 135px;
 	
 	#top-bar
 		{
@@ -144,16 +148,16 @@ header
 			
 			#logo
 			{
-				width: 181px;
-				height: 107px;
-				margin: 37px 0 0 11px;
+				width: 254px;
+				height: 57px;
+				margin: 45px 40px 0 35px;
 				float: left;
 			}
 			
 			nav
 			{
 				float: left;
-				width: 768px;
+				width: 631px;
 				height: 50px;
 			}
 		}
@@ -172,8 +176,7 @@ header
 #access .menu-header,
 div.menu {
 	font-family: Georgia, serif;
-	float: right;
-	margin: 73px 96px 0 0;
+	margin-top: 58px;
 }
 #access .menu-header ul,
 div.menu ul {
@@ -186,7 +189,7 @@ div.menu li {
 	position: relative;
 }
 #access a {
-	color: @slingstone-logo-grey;
+	color: @type-grey;
 	display: block;
 	line-height: 38px;
 	padding: 0 10px;
@@ -232,7 +235,7 @@ div.menu li {
 #access li:hover > a,
 #access ul ul :hover > a {
 	text-decoration: none;
-	color: @slingstone-red;
+	color: @cl-green;
 	.transition;
 }
 #access ul li:hover > ul {
@@ -270,7 +273,7 @@ div.menu li {
 #footer-bar
 {
 	width: 100%;
-	background-color: @slingstone-red;
+	background-color: @dark-grey;
 	height: 200px;
 	margin-top: 220px;
 	clear: both;
@@ -280,6 +283,7 @@ div.menu li {
 #carousel
 {
 	margin-top: 40px;
+	clear: both;
 	
 	div.scroll-inst
 	{
@@ -464,7 +468,7 @@ div.menu li {
 			:hover
 			{
 				background: url('../images/ra-bubble-crimson.png') no-repeat 560px 25px transparent;
-				border-left: 7px solid @slingstone-red;
+				border-left: 7px solid @cl-green;
 				width: 585px;
 				padding-left: 13px;
 			}
@@ -526,7 +530,7 @@ div.menu li {
 		
 		input[type="submit"]
 		{
-			background-color: @slingstone-red;
+			background-color: @cl-green;
 			height: 25px;
 			width: 255px;
 			border: 1px solid @border-grey;
@@ -630,7 +634,7 @@ div.menu li {
 		
 		:hover
 		{
-			color: @slingstone-red;
+			color: @cl-green;
 		}
 	}
 	
@@ -989,7 +993,7 @@ img.aligncenter {
 
 	.gradient;
 	border: 1px solid @slingstone-lite-grey;
-	border-left: 7px solid @slingstone-red;
+	border-left: 7px solid @cl-green;
 	clear: both;
 	font-size: 14px;
 	line-height: 20px;
@@ -1021,7 +1025,7 @@ img.aligncenter {
 	margin-bottom: 1em;
 	font-family: Georgia, serif;
 	border-bottom: 1px solid @slingstone-lite-grey;
-	border-left: solid 2px @slingstone-red;
+	border-left: solid 2px @cl-green;
 	padding-left: 5px;
 }
 
@@ -1029,12 +1033,12 @@ h3.entry-title
 {
 	a
 	{
-		color: @slingstone-logo-grey;
+		color: @type-grey;
 		.transition;
 		
 		:hover
 		{
-			background: @slingstone-red;
+			background: @cl-green;
 			color: #fff;
 			.transition;
 			text-decoration: none;
@@ -1063,7 +1067,7 @@ h3.entry-title
 .author-name-single
 {
 	font-family: Georgia, serif;
-	color: @slingstone-logo-grey;
+	color: @type-grey;
 	text-transform: none;
 	letter-spacing: normal;
 }

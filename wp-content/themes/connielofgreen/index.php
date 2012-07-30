@@ -55,7 +55,7 @@
 		</article>
 		
 	<?php endwhile; ?>
-		<h6><a href="<?php bloginfo('url'); ?>/blog">View all posts</a></h6>
+		<h6><a href="<?php bloginfo('url'); ?>/blog">See all articles</a></h6>
 	<?php else : ?>
 				
 		<article>
@@ -67,7 +67,7 @@
 				</div><!-- #recent-articles -->
 				
 				<div id="newsletter-signup">
-					<h3>Newsletter</h3>
+					<h3>Treatment</h3>
 
 					<form action="http://slingstonemedia.us2.list-manage1.com/subscribe/post?u=1de3202d56f09279dd00d4bc7&amp;id=54982bf3bd" method="post" id="mc-embedded-subscribe-form" name="mc-embedded-subscribe-form" class="validate" target="_blank">
 						<p>Sign up here to receive updates, tips on great resources, and special offers</p>
