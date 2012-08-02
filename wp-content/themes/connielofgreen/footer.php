@@ -1,44 +1,19 @@
 <div style="clear:both;">&nbsp;</div>
-<div id="carousel">
-	<div class="slides_container">
-	<?php query_posts('post_type=scroller_ads'); ?>
-	<?php $i = 0; ?>
-	<div class="slide">
-	<?php if (have_posts()) : while (have_posts()) : the_post(); ?>
-		
-		<div class="item">
-			<?php if(get_field('scroller_ad_external_url')): ?>
-				<a href="<?php the_field('scroller_ad_external_url'); ?>">
-			<?php else: ?>
-				<a href="<?php the_field('scroller_ad_internal_url'); ?>">
-			<?php endif; ?>
-					<img src="<?php the_field('scoller_image'); ?>" width="171" height="96" alt="<?php the_title(); ?>" />
-				</a>
-		</div><!-- .item -->
-		
-		<?php
-			/*
-				Loop through till match of 5 then reset to 0.
-			*/
-			if ($i == 4) 
-			{
-				print '</div><div class="slide">';
-				$i = 0;
-			} else {
-				$i++;
-			}
-		
-		?>
-		
-		<?php endwhile; ?>
-				
-	<?php endif; ?>
-	</div>
-		
-	</div><!-- .slide_container -->
-	<div class="scroll-inst ls">[ Use left &amp; right arrows to view more ]</div>
-</div><!-- #carousel -->			
-			
+	<div id="footer-scroll">
+		<?php query_posts('post_type=scroller_ads'); ?>
+	<?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
+			<div class="item">
+				<?php if(get_field('scroller_ad_external_url')): ?>
+					<a href="<?php the_field('scroller_ad_external_url'); ?>">
+					<?php else: ?>
+						<a href="<?php the_field('scroller_ad_internal_url'); ?>">
+						<?php endif; ?>
+						<img src="<?php the_field('scoller_image'); ?>" width="171" height="96" alt="<?php the_title(); ?>" />
+					</a>
+				</div><!-- .item -->
+				<?php endwhile; endif; ?>
+					
+	</div><!-- #footer-scroll -->			
 
 	</section><!-- #page -->
 </div><!-- .container -->

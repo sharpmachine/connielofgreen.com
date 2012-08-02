@@ -76,12 +76,6 @@
 <body <?php body_class(); ?> >
 
 	<header role="banner">
-		<!-- <div id="top-bar">
-			<div id="social-media">
-				<a href="http://www.twitter.com/slingstonemedia" class="twitter"></a>
-				<a href="https://www.facebook.com/pages/Slingstone-Media/131770300191708" class="facebook"></a>
-			</div>
-		</div> -->
 		<hgroup>
 			<div id="logo">
 				<a href="<?php bloginfo('url'); ?>"><img src="<?php bloginfo('template_directory'); ?>/images/logo.png" width="254" height="57" alt="Logo"></a>
@@ -97,7 +91,7 @@
 		</hgroup>
 	
 	</header>
-	<div class="container"> <!-- some layouts will require this to moved down just above the #main tag -->
+	<div class="container">
 	<section id="page">
 		
 <?php if (!is_home()): ?>

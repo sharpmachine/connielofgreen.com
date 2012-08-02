@@ -66,16 +66,12 @@
 <?php endif; ?>
 				</div><!-- #recent-articles -->
 				
-				<div id="newsletter-signup">
+				<div id="starpro-info">
 					<h3>Treatment</h3>
-
-					<form action="http://slingstonemedia.us2.list-manage1.com/subscribe/post?u=1de3202d56f09279dd00d4bc7&amp;id=54982bf3bd" method="post" id="mc-embedded-subscribe-form" name="mc-embedded-subscribe-form" class="validate" target="_blank">
-						<p>Sign up here to receive updates, tips on great resources, and special offers</p>
-						<input type="email" value="" name="EMAIL" class="required email" id="mce-EMAIL" placeholder="you@something.com">
-						<input type="submit" value="Sign Up" name="subscribe" id="mc-embedded-subscribe" class="btn">
-						<img src="<?php bloginfo('template_directory'); ?>/images/letter.png" width="212" height="81" alt="Letter">
-
-					</form>
+						<div id="starpro-hzlogo">
+							<img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="117" height="149" alt="Logo2">
+						</div>
+					<p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor.</p>
 				</div>
 		
 			</div><!-- .center-content -->

@@ -106,7 +106,7 @@ function setup_category_menu(el)
   
   el.find('ul > li > ul').css('width', o[0] + o[1] + 10);
   
-  ul.css('display', 'none !important').hide();
+  // ul.css('display', 'none !important').hide();
   
   mb.hover(function() {    
     ul.css('display', 'block !important');
@@ -120,7 +120,7 @@ function setup_category_menu(el)
     li.each(function() {
       $(this).stop().animate({width: 0});
     });
-    ul.css('display', 'none !important');
+    // ul.css('display', 'none !important');
     
   });
   

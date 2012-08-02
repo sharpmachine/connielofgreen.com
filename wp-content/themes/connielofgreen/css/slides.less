@@ -170,87 +170,10 @@
 				}
 			}
 		}
-
-		
 		
 	}
-	
 }
 
-
-/*
-	Carousel container
-	Important:
-	Set the width of your slides container
-	Set to display none, prevents content flash
-*/
-
-#carousel
-{
-	
-	position: relative;
-	height: 96px;
-	width: @width;
-	
-	.pagination {
-		display: none;
-	}
-	
-	.next, .prev
-	{
-		background: transparent url('../images/arrows.png') no-repeat 0 0;
-		position: absolute;
-		top: 37px;
-		width: 22px;
-		height: 22px;
-		text-indent: -9999em;
-		z-index: 100;
-	}
-	
-	.next
-	{
-		right: 0;
-		background-position: 0 -44px;
-	}
-	
-	.prev 
-	{
-		left: 0;
-	}
-	
-	.slides_container {
-		width: 900px;
-		height: 96px;
-		display:none;
-		margin-left: 28px;
-
-		/*
-		Each slide
-		Important:
-		Set the width of your slides
-		If height not specified height will be set by the slide content
-		Set to display block
-		*/
-
-		.slide {
-			width:905px;
-			height:96px;
-			display:block;
-		}
-		
-		/*
-		Set the size of your carousel items
-		*/
-		.item {
-			float:left;
-			width:171px;
-			height:96px;
-			margin:0 5px;
-		}
-
-	}
-
-}
 
 
 

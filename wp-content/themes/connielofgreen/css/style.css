@@ -22,7 +22,7 @@ body {
 body {
   background: url('../images/radial-gradient-bg.png') no-repeat top center;
   font-family: 'Droid Sans', Arial, sans-serif;
-  color: #6c6f70;
+  color: #343434;
   font-size: 12px;
   background-color: #f5f3eb;
 }
@@ -42,7 +42,7 @@ a {
   color: #095f59;
   text-decoration: none;
 }
-a :hover {
+a:hover {
   text-decoration: underline;
   color: #095f59;
 }
@@ -168,7 +168,7 @@ div.menu li {
   padding: 10px;
   width: 160px;
   height: auto;
-  color: #6c6f70;
+  color: #343434;
   font-size: 11px;
 }
 #access ul ul a :hover {
@@ -202,11 +202,20 @@ div.menu li {
   background: url(../images/drop-icon.gif) no-repeat;
 }
 /*.......................................................the footer*/
+#footer-scroll .item {
+  width: 171px;
+  height: 96px;
+  margin-right: 26px;
+  float: left;
+}
+#footer-scroll .item:last-child {
+  margin-right: 0;
+}
 #footer-bar {
   width: 100%;
   background-color: #575757;
-  height: 200px;
-  margin-top: 220px;
+  height: 65px;
+  margin-top: 135px;
   clear: both;
   position: relative;
 }
@@ -226,11 +235,10 @@ footer {
   margin: 0 auto;
 }
 footer #site-info {
-  position: relative;
-  bottom: -100px;
-  left: 30px;
+  margin: 23px 20px 0 0;
   color: #fff;
-  clear: both;
+  float: right;
+  font-size: 11px;
 }
 footer #site-info a {
   color: #fff;
@@ -240,7 +248,7 @@ div.menu {
   font-family: Georgia, serif;
   font-size: 0.9em;
   float: left;
-  margin: 20px 0 0 5px;
+  margin: 10px 0 0 5px;
 }
 #footer-menu .footer-nav ul,
 div.menu ul {
@@ -251,7 +259,7 @@ div.menu ul {
 div.menu li {
   float: left;
   position: relative;
-  width: 155px;
+  width: 115px;
 }
 #footer-menu a {
   color: #fff;
@@ -304,11 +312,13 @@ div.menu li {
 #footer-menu a > a {
   background: url(../images/drop-icon.gif) no-repeat;
 }
-/*.......................................................the banner*/
+/*.......................................................the \*/
 #banner-container {
   background: url('../images/banner-shadow.png') no-repeat scroll bottom left;
   width: 960px;
   height: 365px;
+  padding-top: 14px;
+  overflow: hidden;
 }
 /*.......................................................the center content on homepage*/
 .center-content {
@@ -318,7 +328,7 @@ div.menu li {
 }
 .center-content h3 {
   margin-bottom: 12px;
-  color: #636466;
+  color: #343434;
   text-align: center;
   font-size: 1.3em;
 }
@@ -331,93 +341,76 @@ div.menu li {
   text-align: center;
 }
 #recent-articles h6 {
-  background-color: #F0F0F0;
   padding: 5px 0;
-  font-size: 0.8em;
+  font-size: 1em;
 }
 #recent-articles h6 a {
   text-decoration: none;
 }
-#recent-articles h6 a :hover {
+#recent-articles h6 a:hover {
   text-decoration: underline;
 }
 #recent-articles article {
-  background: #ebebeb;
-  background: -webkit-gradient(linear, left top, left bottom, from(#e2e2e2), to(#ebebeb));
-  background: -webkit-linear-gradient(#e2e2e2, #ebebeb);
-  background: -moz-linear-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -moz-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -o-linear-gradient(#e2e2e2, #ebebeb);
-  background: linear-gradient(#e2e2e2, #ebebeb);
+  background: -moz-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* FF3.6+ */
+
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, rgba(226, 226, 226, 0.43)), color-stop(100%, rgba(212, 204, 180, 0.43)));
+  /* Chrome,Safari4+ */
+
+  background: -webkit-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* Chrome10+,Safari5.1+ */
+
+  background: -o-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* Opera 11.10+ */
+
+  background: -ms-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* IE10+ */
+
+  background: linear-gradient(to bottom, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* W3C */
+
+  filter: progid:dximagetransform.microsoft.gradient(startColorstr='#00e2e2e2', endColorstr='#d4ccb4', GradientType=0);
+  /* IE6-9 */
+
 }
 #recent-articles article .frontpage-article {
   height: 44px;
   width: 585px;
-  border-bottom: 1px solid #a2a5a4;
+  border-bottom: 1px solid #e3e1d6;
   text-align: left;
   padding: 15px 20px;
-  background: url('../images/ra-bubble-grey.png') no-repeat 567px 25px transparent;
-}
-#recent-articles article .frontpage-article :hover {
-  background: url('../images/ra-bubble-crimson.png') no-repeat 560px 25px transparent;
-  border-left: 7px solid #095f59;
-  width: 585px;
-  padding-left: 13px;
+  background: url('../images/speechbubble-cream.png') no-repeat 567px 25px transparent;
 }
 #recent-articles article .frontpage-article h2 {
   margin: -10px 0 4px 0;
 }
 #recent-articles article .frontpage-article h2 a {
   text-decoration: none;
-  color: #6c6f70;
+  color: #343434;
 }
-#recent-articles article .frontpage-article h2 a :hover {
+#recent-articles article .frontpage-article h2 a:hover {
   text-decoration: underline;
 }
+#recent-articles article .frontpage-article:hover {
+  background: url('../images/speechbubble-green.png') no-repeat 560px 25px transparent;
+  border-left: 7px solid #095f59;
+  width: 585px;
+  padding-left: 13px;
+}
 /*.......................................................the newsletter*/
-#newsletter-signup {
+#starpro-info {
   width: 295px;
   float: left;
 }
-#newsletter-signup form {
-  width: 255px;
-  height: 210px;
-  padding: 20px;
-  background: #ebebeb;
-  background: -webkit-gradient(linear, left top, left bottom, from(#e2e2e2), to(#ebebeb));
-  background: -webkit-linear-gradient(#e2e2e2, #ebebeb);
-  background: -moz-linear-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -moz-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -o-linear-gradient(#e2e2e2, #ebebeb);
-  background: linear-gradient(#e2e2e2, #ebebeb);
+#starpro-info #starpro-hzlogo {
+  width: 117px;
+  height: 149px;
+  margin: 25px auto 15px auto;
 }
-#newsletter-signup form img {
-  position: relative;
-  top: 10px;
-  left: 18px;
-}
-#newsletter-signup form p {
+#starpro-info p {
+  width: 220px;
+  margin: 0 auto;
   text-align: center;
-  color: #636466;
-}
-#newsletter-signup form input[type="email"] {
-  height: 28px;
-  border: 1px solid #a2a5a4;
-  width: 243px;
-  font-family: 'Droid Sans', Arial, sans-serif;
-  padding: 0 5px;
-}
-#newsletter-signup form input[type="submit"] {
-  background-color: #095f59;
-  height: 25px;
-  width: 255px;
-  border: 1px solid #a2a5a4;
-  color: #fff;
-  font-family: Georgia, serif;
-  text-transform: uppercase;
-  letter-spacing: 4px;
-  font-weight: normal;
-  cursor: pointer;
 }
 /*.......................................................the scroller*/
 #scroller {
@@ -477,9 +470,9 @@ div.menu li {
   list-style: none;
 }
 .widget-area a {
-  color: #6c6f70;
+  color: #343434;
 }
-.widget-area a :hover {
+.widget-area a:hover {
   color: #095f59;
 }
 .widget-area ul.primary li.widget-container {
@@ -487,7 +480,7 @@ div.menu li {
 }
 .widget-area ul.primary li.widget-container:nth-child(2n) h3 {
   background: url('../images/widget-title-bg-grey.png') no-repeat scroll top left;
-  color: #6c6f70;
+  color: #343434;
 }
 .widget-area ul.primary h3.widget-title {
   font-size: 0.8em;
@@ -806,13 +799,27 @@ img.aligncenter {
 }
 /*.......................................................the author info*/
 #entry-author-info {
-  background: #ebebeb;
-  background: -webkit-gradient(linear, left top, left bottom, from(#e2e2e2), to(#ebebeb));
-  background: -webkit-linear-gradient(#e2e2e2, #ebebeb);
-  background: -moz-linear-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -moz-gradient(center top, #e2e2e2 0%, #ebebeb 100%);
-  background: -o-linear-gradient(#e2e2e2, #ebebeb);
-  background: linear-gradient(#e2e2e2, #ebebeb);
+  background: -moz-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* FF3.6+ */
+
+  background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, rgba(226, 226, 226, 0.43)), color-stop(100%, rgba(212, 204, 180, 0.43)));
+  /* Chrome,Safari4+ */
+
+  background: -webkit-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* Chrome10+,Safari5.1+ */
+
+  background: -o-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* Opera 11.10+ */
+
+  background: -ms-linear-gradient(top, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* IE10+ */
+
+  background: linear-gradient(to bottom, rgba(226, 226, 226, 0.43) 0%, rgba(212, 204, 180, 0.43) 100%);
+  /* W3C */
+
+  filter: progid:dximagetransform.microsoft.gradient(startColorstr='#00e2e2e2', endColorstr='#d4ccb4', GradientType=0);
+  /* IE6-9 */
+
   border: 1px solid #e2e2e2;
   border-left: 7px solid #095f59;
   clear: both;

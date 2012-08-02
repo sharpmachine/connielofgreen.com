@@ -1,23 +1,22 @@
  article, aside, figure, footer, header, hgroup, 
   menu, nav, section { display: block; }
 
-@slingstone-type-grey: #6C6F70;
 @slingstone-lite-grey: #E2E2E2;
-@border-grey: #a2a5a4;
+@border-grey: #e3e1d6;
 
 @cl-green: #095f59;
 @cl-cream: #f5f3eb;
 @type-grey: #343434;
 @dark-grey: #575757;
 
-.gradient(@start:#E2E2E2, @stop:#EBEBEB) {
-   background: @stop;
-   background: -webkit-gradient(linear, left top, left bottom, from(@start), to(@stop));
-   background: -webkit-linear-gradient(@start, @stop);
-   background: -moz-linear-gradient(center top, @start 0%, @stop 100%);
-   background: -moz-gradient(center top, @start 0%, @stop 100%);
-   background: -o-linear-gradient(@start, @stop);
-   background:  linear-gradient(@start, @stop);
+.gradient(@start:rgba(226,226,226,0.43), @stop:rgba(212,204,180,0.43)) {
+	background: -moz-linear-gradient(top,  @start 0%, @stop 100%); /* FF3.6+ */
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,@start), color-stop(100%,@stop)); /* Chrome,Safari4+ */
+	background: -webkit-linear-gradient(top,  @start 0%,@stop 100%); /* Chrome10+,Safari5.1+ */
+	background: -o-linear-gradient(top,  @start 0%,@stop 100%); /* Opera 11.10+ */
+	background: -ms-linear-gradient(top,  @start 0%,@stop 100%); /* IE10+ */
+	background: linear-gradient(to bottom,  @start 0%,@stop 100%); /* W3C */
+	filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#00e2e2e2', endColorstr='#d4ccb4',GradientType=0 ); /* IE6-9 */
 }
 
 .transition(@property:all, @duration:0.5s, @effect:ease)
@@ -40,7 +39,7 @@ html, body
   {
   	background: url('../images/radial-gradient-bg.png') no-repeat top center;
   	font-family: 'Droid Sans', Arial, sans-serif;
-  	color: @slingstone-type-grey;
+  	color: @type-grey;
   	font-size: 12px;
 	background-color: @cl-cream;
   }
@@ -60,13 +59,10 @@ a
 	text-decoration: none;
 }
 
-a
+a:hover
 {
-	:hover
-	{
-		text-decoration: underline;
-		color: @cl-green;
-	}
+	text-decoration: underline;
+	color: @cl-green;
 }
 
 hr
@@ -224,7 +220,7 @@ div.menu li {
 	padding: 10px;
 	width: 160px;
 	height: auto;
-	color: @slingstone-type-grey;
+	color: @type-grey;
 	font-size: 11px;
 	
 	:hover
@@ -270,12 +266,27 @@ div.menu li {
 }
 
 /*.......................................................the footer*/
+#footer-scroll
+{	
+	.item
+	{
+		width: 171px;
+		height: 96px;
+		margin-right: 26px;
+		float: left;
+	}
+	
+	.item:last-child
+	{
+		margin-right: 0;
+	}
+}
 #footer-bar
 {
 	width: 100%;
 	background-color: @dark-grey;
-	height: 200px;
-	margin-top: 220px;
+	height: 65px;
+	margin-top: 135px;
 	clear: both;
 	position: relative;
 }
@@ -302,11 +313,10 @@ footer
 	
 	#site-info
 	{
-		position: relative;
-		bottom: -100px;
-		left: 30px;
+		margin: 23px 20px 0 0;
 		color: #fff;
-		clear: both;
+		float: right;
+		font-size: 11px;
 		
 		a
 		{
@@ -320,7 +330,7 @@ div.menu {
 	font-family: Georgia, serif;
 	font-size: 0.9em;
 	float: left;
-	margin: 20px 0 0 5px;
+	margin: 10px 0 0 5px;
 }
 #footer-menu .footer-nav ul,
 div.menu ul {
@@ -331,7 +341,7 @@ div.menu ul {
 div.menu li {
 	float: left;
 	position: relative;
-	width: 155px;
+	width: 115px;
 }
 #footer-menu a {
 	color: #fff;
@@ -402,12 +412,14 @@ div.menu li {
 	background: url(../images/drop-icon.gif) no-repeat;
 }
 
-/*.......................................................the banner*/
+/*.......................................................the \*/
 #banner-container
 {
 	background: url('../images/banner-shadow.png') no-repeat scroll bottom left;
 	width: 960px;
 	height: 365px;
+	padding-top: 14px;
+	overflow: hidden;
 }
 
 /*.......................................................the center content on homepage*/
@@ -420,7 +432,7 @@ div.menu li {
 	h3
 	{
 		margin-bottom: 12px;
-		color: #636466;
+		color: @type-grey;
 		text-align: center;
 		font-size: 1.3em;
 	}
@@ -437,25 +449,24 @@ div.menu li {
 	
 	h6	
 	{
-		background-color: #F0F0F0;
 		padding: 5px 0;
-		font-size: 0.8em;
+		font-size: 1em;
 		
 		a
 		{
 			text-decoration: none;
-			
-			:hover
-			{
-				text-decoration: underline;
-			}
+		}
+		
+		a:hover
+		{
+			text-decoration: underline;
 		}
 	}
 	
 	article
 	{
 		.gradient;
-		
+
 		.frontpage-article
 		{	
 			height: 44px;
@@ -463,84 +474,53 @@ div.menu li {
 			border-bottom: 1px solid @border-grey;
 			text-align: left;
 			padding: 15px 20px;
-			background: url('../images/ra-bubble-grey.png') no-repeat 567px 25px transparent;
-			
-			:hover
+			background: url('../images/speechbubble-cream.png') no-repeat 567px 25px transparent;
+	
+			h2
 			{
-				background: url('../images/ra-bubble-crimson.png') no-repeat 560px 25px transparent;
-				border-left: 7px solid @cl-green;
-				width: 585px;
-				padding-left: 13px;
-			}
-
-		h2
-		{
-			margin: -10px 0 4px 0;
+				margin: -10px 0 4px 0;
 			
-			a
-			{
-				text-decoration: none;
-				color: @slingstone-type-grey;
+				a
+				{
+					text-decoration: none;
+					color: @type-grey;
+				}
 				
-				:hover
+				a:hover
 				{
 					text-decoration: underline;
 				}
+				
 			}
 		}
-	}
+		
+		.frontpage-article:hover
+		{
+			background: url('../images/speechbubble-green.png') no-repeat 560px 25px transparent;
+			border-left: 7px solid @cl-green;
+			width: 585px;
+			padding-left: 13px;
+		}
 	}
 }
-
-
 /*.......................................................the newsletter*/
-#newsletter-signup
+#starpro-info
 {
 	width: 295px;
 	float: left;
 	
-	form
+	#starpro-hzlogo
 	{
-		width: 255px;
-		height: 210px;
-		padding: 20px;
-		.gradient;
-		
-		img
-		{
-			position: relative;
-			top: 10px;
-			left: 18px;
-		}
-		
-		p
-		{
-			text-align: center;
-			color: #636466;
-		}
-		
-		input[type="email"]
-		{
-			height: 28px;
-			border: 1px solid @border-grey;
-			width: 243px;
-			font-family: 'Droid Sans', Arial, sans-serif;
-			padding: 0 5px;
-		}
-		
-		input[type="submit"]
-		{
-			background-color: @cl-green;
-			height: 25px;
-			width: 255px;
-			border: 1px solid @border-grey;
-			color: #fff;
-			font-family: Georgia, serif;
-			text-transform: uppercase;
-			letter-spacing: 4px;
-			font-weight: normal;
-			cursor: pointer;
-		}
+		width: 117px;
+		height: 149px;
+		margin: 25px auto 15px auto;
+	}
+	
+	p
+	{
+		width: 220px;
+		margin: 0 auto;
+		text-align: center;
 	}
 }
 
@@ -630,9 +610,9 @@ div.menu li {
 	
 	a
 	{
-		color: @slingstone-type-grey;
+		color: @type-grey;
 		
-		:hover
+		&:hover
 		{
 			color: @cl-green;
 		}
@@ -650,7 +630,7 @@ div.menu li {
 			h3
 			{
 				background: url('../images/widget-title-bg-grey.png') no-repeat scroll top left;
-				color: @slingstone-type-grey;
+				color: @type-grey;
 			}
 		}
 		
