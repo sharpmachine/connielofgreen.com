@@ -29,6 +29,8 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 	// string for nonce fields
 	static public  $nonce_string;
 	
+	protected $page_hook;
+	
 	/**
 	 * Handler for the action 'init'. Instantiates this class.
 	 * 
@@ -75,6 +77,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 			add_action( 'network_admin_edit_' . self::$option_string, array( $this, 'save_network_settings_page' ) );
 			// return message for update settings
 			add_action( 'network_admin_notices', array( $this, 'get_network_admin_notices' ) );
+			// add script on settings page
 		} else {
 			add_action( 'admin_menu',            array( $this, 'add_settings_page' ) );
 			// add settings link
@@ -82,6 +85,11 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 			// use settings API
 			add_action( 'admin_init',            array( $this, 'register_settings' ) );
 		}
+		// include js 
+		add_action( 'admin_print_scripts-settings_page_' . str_replace( '.php', '', plugin_basename( __FILE__ ) ), 
+			array( $this, 'print_scripts' )
+		);
+			
 		// add meta boxes on settings pages
 		add_action( 'addquicktag_settings_page_sidebar', array( $this, 'get_plugin_infos' ) );
 		add_action( 'addquicktag_settings_page_sidebar', array( $this, 'get_about_plugin' ) );
@@ -243,6 +251,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 						<th class="row-title"><?php _e( 'Order', $this->get_textdomain() ); ?></th>
 						<th class="row-title"><?php _e( 'Visual', $this->get_textdomain() ); ?></th>
 						<?php echo $pt_title ?>
+						<th class="row-title">&#x2714;</th>
 					</tr>
 					<?php
 					if ( empty($options['buttons']) )
@@ -271,6 +280,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 						// loop about the post types, create html an values
 						$pt_checkboxes = '';
 						foreach ( $this->get_post_types_for_js() as $post_type ) {
+							
 							if ( ! isset( $b[$post_type] ) )
 								$b[$post_type] = 0;
 							
@@ -288,8 +298,9 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 						}
 						
 						$nr = $i + 1;
+					
 					echo '
-					<tr>
+					<tr id="rmqtb' . $i . '">
 						<td><input type="text" name="' . self::$option_string . '[buttons][' . $i 
 						. '][text]" value="' . $b['text'] . '" style="width: 95%;" /></td>
 						<td><input type="text" name="' . self::$option_string . '[buttons][' . $i . '][title]" value="' 
@@ -305,6 +316,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 						<td><input type="checkbox" name="' . self::$option_string . '[buttons][' . $i 
 						. '][visual]" value="1"' . $checked . '/></td>' . 
 						$pt_checkboxes . '
+						<td><input type="checkbox" class="toggle" id="select_all_' . $i . '" value="'. $i . '" /></td>' . '
 					</tr>
 					';
 					}
@@ -327,7 +339,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 							$i . '][' . $post_type . ']" value="1" /></td>' . "\n";
 					}
 					?>
-					<tr>
+					<tr id="rmqtb<?php echo $i ?>">
 						<td><input type="text" name="<?php echo self::$option_string; ?>[buttons][<?php echo $i; ?>][text]" value="" style="width: 95%;" /></td>
 						<td><input type="text" name="<?php echo self::$option_string; ?>[buttons][<?php echo $i; ?>][title]" value="" style="width: 95%;" /></td>
 						<td><textarea class="code" name="<?php echo self::$option_string; ?>[buttons][<?php echo $i; ?>][start]" rows="2" cols="25" style="width: 95%;"></textarea></td>
@@ -336,6 +348,7 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 						<td><input type="text" name="<?php echo self::$option_string; ?>[buttons][<?php echo $i; ?>][order]" value="" style="width: 95%;" /></td>
 						<td><input type="checkbox" name="<?php echo self::$option_string; ?>[buttons][<?php echo $i; ?>][visual]" value="1" /></td>
 						<?php echo $pt_new_boxes; ?>
+						<td><input type="checkbox" class="toggle" id="select_all_<?php echo $i ?>" value="<?php echo $i ?>" /></td>
 					</tr>
 				</table>
 				
@@ -556,6 +569,20 @@ class Add_Quicktag_Settings extends Add_Quicktag {
 		
 		unregister_setting( self::$option_string . '_group', self::$option_string );
 		delete_option( self::$option_string );
+	}
+	
+	public function print_scripts( $where ) {
+		
+		$suffix = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? '.dev' : '';
+		
+		wp_register_script(
+			self::$option_string . '_admin_script', 
+			plugins_url( '/js/settings' . $suffix. '.js', parent::get_plugin_string() ), 	
+			array( 'jquery', 'quicktags' ),
+			'',
+			TRUE
+		);
+		wp_enqueue_script( self::$option_string . '_admin_script' );
 	}
 	
 	/**
