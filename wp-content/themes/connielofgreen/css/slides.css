@@ -87,15 +87,20 @@
 }
 #banner #categories ul li {
   position: relative;
+  /*	&:hover
+							{
+								ul
+								{
+									display: inherit;
+								}
+							}*/
+
 }
 #banner #categories ul li a {
   display: block;
   background: transparent url('../images/categories-bar.png') no-repeat 0 0;
   width: 40px;
   height: 332px;
-}
-#banner #categories ul li:hover ul {
-  display: inherit;
 }
 #banner #categories ul li ul {
   position: absolute;

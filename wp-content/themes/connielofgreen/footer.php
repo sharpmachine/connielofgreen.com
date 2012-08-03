@@ -17,7 +17,7 @@
 
 	</section><!-- #page -->
 </div><!-- .container -->
-
+<div style="clear:both;">&nbsp;</div>
 <div id="footer-bar">
 	<footer role="contentinfo">
 		<nav id="footer-menu">
@@ -39,12 +39,12 @@
 
 <!-- load the javascript api from google-->
 <?php if (is_home()): ?>
-<script src="http://www.google.com/jsapi" type="text/javascript" charset="utf-8"></script>
+<!-- <script src="http://www.google.com/jsapi" type="text/javascript" charset="utf-8"></script>
 <script type="text/javascript" charset="utf-8">
 //  Load jQuery
 google.load("jquery", "1.6.1");
 google.load("jqueryui", "1.8.15");
-</script> 
+</script>  -->
 	<?php endif; ?>
 <?php wp_footer(); ?>
 <script src="<?php bloginfo('template_directory'); ?>/js/slides.min.jquery.js"></script>

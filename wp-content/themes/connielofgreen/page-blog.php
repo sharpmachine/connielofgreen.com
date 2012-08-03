@@ -2,16 +2,7 @@
 
 		<div id="content-container" class="pagearoni">
 			<section id="content" class="mcontent" role="main">
-				
-				<?php $category_count = $wpdb->get_var("SELECT COUNT(*) FROM $wpdb->term_taxonomy WHERE taxonomy = 'category' AND parent = '0' ");?>
 
-				<h2><?php echo $category_count; ?> Flavors to Choose from:</h2>
-				
-				<?php get_template_part( 'loop', 'page' ); ?>
-			<?php wp_reset_query(); ?>
-
-			<?php get_cat_images_descripts(); ?>
-<hr>
 			
 		<?php
 		$temp = $wp_query;
