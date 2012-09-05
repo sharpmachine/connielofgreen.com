@@ -85,6 +85,46 @@ http://support.advancedcustomfields.com/
 
 == Changelog ==
 
+= 3.4.0 =
+* [Fixed] Fix validation rules for multiple select - http://support.advancedcustomfields.com/discussion/2858/multiple-select-validation-doesnt-work
+* [Added] Add support for options page toggle open / close metabox
+* [Fixed] Fix special characters in registered options page - http://support.advancedcustomfields.com/discussion/comment/7500#Comment_7500
+* [Updated] CSS tweak for relationship field - http://support.advancedcustomfields.com/discussion/2877/relation-field-with-multiple-post-types-css-styling-problem-
+* [Fixed] Fix datepicker blank option bug - http://support.advancedcustomfields.com/discussion/2896/3-3-9-date-picker-not-popping-up
+* [Added] Add new function get_field_object to API - http://support.advancedcustomfields.com/discussion/290/field-label-on-frontend
+* [Fixed] Fix field groups not showing for Shopp add new product - http://support.advancedcustomfields.com/discussion/3005/acf-shopp
+* [Fixed] Move acf.data outside of the doc.ready in input-ajax.js
+* [Fixed] Fix IE7 JS bug - http://support.advancedcustomfields.com/discussion/3020/ie7-fix-on-is_clone_field-function
+* [Fixed] Fix relationship search - Only search title, not content
+* [Updated] Update function update_field to use field_key or field_name
+* [Added] Add field group screen option to show field keys (to use in save_field / update field)
+* [Added] Add actions on all save events (action is called "acf_save_post", 1 param = $post_id)
+
+= 3.3.9 =
+* [Added] Add basic support for WPML - duplicate field groups, pages and posts for each language without corrupting ACF data!
+* [Fixed] Fix date picker save null - http://support.advancedcustomfields.com/discussion/2844/bug-with-the-date-picker
+* [Fixed] Fix color picker save null - http://support.advancedcustomfields.com/discussion/2683/allow-null-on-colour-pickers#Item_1
+* [Fixed] Fix image object null result - http://support.advancedcustomfields.com/discussion/2852/3.3.8-image-field-image-object-always-returns-true-
+* [Updated] Update Japanese translation - http://support.advancedcustomfields.com/discussion/comment/7384#Comment_7384
+* [Added] WYSIWYG field option - disable "the_content" filter to allow for compatibility issues with plugins / themes - http://support.advancedcustomfields.com/discussion/comment/7020#Comment_7020
+
+= 3.3.8 =
+* [Added] Gallery field { auto add image on upload, new style to show already added images
+* [Fixed] Fix saving value issue with WP e-commerce http://support.advancedcustomfields.com/discussion/comment/7026#Comment_7026
+* [Updated] Date picker field { new display format option (different from save format), UI overhaul
+* [Added] Add new field - Number
+* [Fixed] Test post object / select based fields for saving empty value - http://support.advancedcustomfields.com/discussion/2759/post-object-and-conditional-statement
+
+= 3.3.7 =
+* [Added] Add new return value for image { image object
+* [Updated] Update Dutch translation (thanks to Derk Oosterveld - www.inpoint.nl)
+* [Updated] Update UI Styles
+* [Updated] Refresh settings page UI and fix exported PHP code indentation Styles
+* [Fixed] Fix post object hierarchy display bug - http://support.advancedcustomfields.com/discussion/2650/post_object-showing-posts-in-wrong-hierarchy
+* [Fixed] Fix metabox position from high to core - http://support.advancedcustomfields.com/discussion/comment/6846#Comment_6846
+* [Fixed] Fix flexible content field save layout with no fields - http://support.advancedcustomfields.com/discussion/2639/flexible-content-field-support-for-empty-layoutss
+* [Fixed] Text / Fix field group limit - http://support.advancedcustomfields.com/discussion/2675/admin-only-showing-20-fields-groups
+
 = 3.3.6 =
 * [Fixed] Fix IE regex issue (thanks to Ben Heller - http://spruce.it)
 * [Added] Check for more translatable strings (thanks to Derk Oosterveld - www.inpoint.nl)
