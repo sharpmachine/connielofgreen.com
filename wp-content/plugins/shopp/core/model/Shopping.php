@@ -30,6 +30,7 @@
  * @since 1.1
  **/
 class Shopping extends SessionObject {
+	private static $instance;
 
 	/**
 	 * Shopping constructor
@@ -47,7 +48,14 @@ class Shopping extends SessionObject {
 		parent::__construct();
 
 		// Queue the session to start
-		add_action('init',array(&$this,'init'));
+		// prioritize really early (before errors priority 5)
+		add_action('init',array($this,'init'),2);
+	}
+
+	public static function instance () {
+		if ( ! self::$instance )
+			self::$instance = new self();
+		return self::$instance;
 	}
 
 	/**
@@ -83,6 +91,47 @@ class Shopping extends SessionObject {
 		return true;
 	}
 
+	/**
+	 * Reset the shopping session
+	 *
+	 * Controls the cart to allocate a new session ID and transparently
+	 * move existing session data to the new session ID.
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @return boolean True on success
+	 **/
+	static function resession ($session=false) {
+		$Shopping = ShoppShopping();
+
+		// commit current session
+		session_write_close();
+		$Shopping->handling(); // Workaround for PHP 5.2 bug #32330
+
+		if ($session) { // loading session
+			session_id($session); // session_id while session is closed
+			$Shopping->session = session_id(); // Get the new session assignment
+			$Shopping->init();
+			return true;
+		}
+
+		$Shopping->init();
+		session_regenerate_id(); // Generate new ID while session is started
+
+		// Ensure we have the newest session ID
+		$Shopping->session = session_id();
+
+		// Commit the session and restart
+		session_write_close();
+		$Shopping->handling(); // Workaround for PHP 5.2 bug #32330
+		$Shopping->init();
+
+		do_action('shopp_reset_session'); // Deprecated
+		do_action('shopp_resession');
+		return true;
+	}
+
 } // END class Shopping
 
 /**
@@ -115,15 +164,15 @@ class Shopping extends SessionObject {
 class ShoppingObject {
 
 	static function &__new ($class, &$ref=false) {
-		global $Shopp;
+		$Shopping = ShoppShopping();
 
-		if ($ref !== false) $ref->__destruct();
+		if ( is_object($ref) && method_exists($ref, '__destruct') ) $ref->__destruct();
 
-		if (isset($Shopp->Shopping->data->{$class})) // Restore the object
-			$object = $Shopp->Shopping->data->{$class};
-		else {
+		if (isset($Shopping->data->{$class})) { // Restore the object
+			$object = $Shopping->data->{$class};
+		} else {
 			$object = new $class();					// Create a new object
-			$Shopp->Shopping->data->{$class} = &$object; // Register storage
+			$Shopping->data->{$class} = &$object; // Register storage
 		}
 
 		return $object;
@@ -143,12 +192,17 @@ class ShoppingObject {
 	 * @return void
 	 **/
 	static function store ($property, &$data) {
-		global $Shopp;
-		if (isset($Shopp->Shopping->data->{$property}))	// Restore the data
-			$data = $Shopp->Shopping->data->{$property};
-		$Shopp->Shopping->data->{$property} = &$data;	// Keep a reference
+		$Shopping = ShoppShopping();
+		if (isset($Shopping->data->{$property}))	// Restore the data
+			$data = $Shopping->data->{$property};
+
+		$Shopping->data->{$property} = &$data;	// Keep a reference
 	}
 
+}
+
+function ShoppShopping() {
+	return Shopping::instance();
 }
 
 ?>

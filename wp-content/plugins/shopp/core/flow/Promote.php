@@ -18,7 +18,9 @@
  * @author Jonathan Davis
  **/
 class Promote extends AdminController {
+
 	var $Notice = false;
+	var $screen = 'shopp_page_shopp-promotions';
 
 	/**
 	 * Promote constructor
@@ -32,10 +34,38 @@ class Promote extends AdminController {
 			wp_enqueue_script('postbox');
 			shopp_enqueue_script('colorbox');
 			shopp_enqueue_script('calendar');
+			shopp_enqueue_script('suggest');
 			do_action('shopp_promo_editor_scripts');
 			add_action('admin_head',array(&$this,'layout'));
 		} else add_action('admin_print_scripts',array(&$this,'columns'));
 		do_action('shopp_promo_admin_scripts');
+
+		$defaults = array(
+			'page' => false,
+			'action' => false,
+			'selected' => array(),
+		);
+		$args = array_merge($defaults,$_GET);
+		extract($args,EXTR_SKIP);
+		if (!is_array($selected)) $selected = array($selected);
+
+		$url = add_query_arg(array_merge($_GET,array('page'=>'shopp-promotions')),admin_url('admin.php'));
+		$f = array('action','selected','s');
+		$url = remove_query_arg( $f, $url );
+		if ('shopp-promotions' == $page && $action !== false) {
+			switch ( $action ) {
+				case 'enable': Promotion::enableset($selected); break;
+				case 'disable': Promotion::disableset($selected); break;
+				case 'delete': Promotion::deleteset($selected); break;
+				case 'duplicate': $P = new Promotion($selected[0]); $P->duplicate(); break;
+			}
+
+			wp_redirect($url);
+			exit();
+
+		}
+
+
 	}
 
 	/**
@@ -58,34 +88,28 @@ class Promote extends AdminController {
 	 **/
 	function promotions () {
 		global $Shopp;
-		$db = DB::get();
 
-		if ( !(is_shopp_userlevel() || current_user_can('shopp_promotions')) )
+		if ( ! current_user_can('shopp_promotions') )
 			wp_die(__('You do not have sufficient permissions to access this page.'));
 
-		require_once("{$Shopp->path}/core/model/Promotion.php");
+		$table = DatabaseObject::tablename(Promotion::$table);
 
 		$defaults = array(
 			'page' => false,
-			'deleting' => false,
-			'delete' => false,
-			'pagenum' => 1,
+			'status' => false,
+			'type' => false,
+			'paged' => 1,
 			'per_page' => 20,
-			's' => ''
+			's' => '',
 			);
 
 		$args = array_merge($defaults,$_GET);
 		extract($args,EXTR_SKIP);
 
-		if ($page == "shopp-promotions"
-				&& !empty($deleting)
-				&& !empty($delete)
-				&& is_array($delete)) {
-			foreach($delete as $deletion) {
-				$Promotion = new Promotion($deletion);
-				$Promotion->delete();
-			}
-		}
+		$url = add_query_arg(array_merge($_GET,array('page'=>'shopp-promotions')),admin_url('admin.php'));
+		$f = array('action','selected','s');
+		$url = remove_query_arg( $f, $url );
+
 
 		if (!empty($_POST['save'])) {
 			check_admin_referer('shopp-save-promotion');
@@ -108,36 +132,65 @@ class Promote extends AdminController {
 
 			do_action_ref_array('shopp_promo_saved',array(&$Promotion));
 
-			$Promotion->reset_discounts();
+			// $Promotion->reset_discounts();
 			if ($Promotion->target == "Catalog")
-				$Promotion->build_discounts();
+				$Promotion->catalog_discounts();
 
 			// Force reload of the session promotions to include any updates
 			$Shopp->Promotions->reload();
 
 		}
 
-		$pagenum = absint( $pagenum );
-		if ( empty($pagenum) )
-			$pagenum = 1;
-		if( !$per_page || $per_page < 0 )
-			$per_page = 20;
+		$pagenum = absint( $paged );
 		$start = ($per_page * ($pagenum-1));
 
+		$where = array();
+		if (!empty($s)) $where[] = "name LIKE '%$s%'";
+		if ($status) {
+			$datesql = Promotion::activedates();
+			switch (strtolower($status)) {
+				case 'active': $where[] = "status='enabled' AND $datesql"; break;
+				case 'inactive': $where[] = "status='enabled' AND NOT $datesql"; break;
+				case 'enabled': $where[] = "status='enabled'"; break;
+				case 'disabled': $where[] = "status='disabled'"; break;
+			}
+		}
+		if ($type) {
+			switch (strtolower($type)) {
+				case 'catalog': $where[] = "target='Catalog'"; break;
+				case 'cart': $where[] = "target='Cart'"; break;
+				case 'cartitem': $where[] = "target='Cart Item'"; break;
+			}
+		}
 
-		$where = "";
-		if (!empty($s)) $where = "WHERE name LIKE '%$s%'";
+		$select = DB::select(array(
+			'table' => $table,
+			'columns' => 'SQL_CALC_FOUND_ROWS *',
+			'where' => $where,
+			'orderby' => 'created DESC',
+			'limit' => "$start,$per_page"
+		));
 
-		$table = DatabaseObject::tablename(Promotion::$table);
-		$promocount = $db->query("SELECT count(*) as total FROM $table $where");
-		$Promotions = $db->query("SELECT * FROM $table $where",AS_ARRAY);
+		$Promotions = DB::query($select,'array');
+		$count = DB::found();
 
-		$status = array(
+		$num_pages = ceil($count / $per_page);
+		$ListTable = ShoppUI::table_set_pagination ($this->screen, $count, $num_pages, $per_page );
+
+		$states = array(
+			'active' => __('Active','Shopp'),
+			'inactive' => __('Not Active','Shopp'),
 			'enabled' => __('Enabled','Shopp'),
 			'disabled' => __('Disabled','Shopp')
 		);
 
-		$num_pages = ceil($promocount->total / $per_page);
+		$types = array(
+			'catalog' => __('Catalog Promotions','Shopp'),
+			'cart' => __('Cart Promotions','Shopp'),
+			'cartitem' => __('Cart Item Promotions','Shopp')
+		);
+
+		$num_pages = ceil($count / $per_page);
 		$page_links = paginate_links( array(
 			'base' => add_query_arg( 'pagenum', '%#%' ),
 			'format' => '',
@@ -145,7 +198,7 @@ class Promote extends AdminController {
 			'current' => $pagenum
 		));
 
-		include("{$Shopp->path}/core/ui/promotions/promotions.php");
+		include(SHOPP_PATH.'/core/ui/promotions/promotions.php');
 	}
 
 	/**
@@ -155,11 +208,11 @@ class Promote extends AdminController {
 	 * @return void
 	 **/
 	function columns () {
-		register_column_headers('shopp_page_shopp-promotions', array(
+		register_column_headers($this->screen, array(
 			'cb'=>'<input type="checkbox" />',
 			'name'=>__('Name','Shopp'),
 			'discount'=>__('Discount','Shopp'),
-			'applied'=>__('Applied To','Shopp'),
+			'applied'=>__('Type','Shopp'),
 			'eff'=>__('Status','Shopp'))
 		);
 	}
@@ -187,10 +240,9 @@ class Promote extends AdminController {
 	function editor () {
 		global $Shopp;
 
-		if ( !(is_shopp_userlevel() || current_user_can('shopp_promotions')) )
+		if ( ! current_user_can('shopp_promotions') )
 			wp_die(__('You do not have sufficient permissions to access this page.'));
 
-		require_once(SHOPP_PATH."/core/model/Promotion.php");
 
 		if ($_GET['id'] != "new") {
 			$Promotion = new Promotion($_GET['id']);

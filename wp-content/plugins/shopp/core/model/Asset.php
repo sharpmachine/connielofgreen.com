@@ -31,28 +31,15 @@ class FileAsset extends MetaObject {
 	var $_xcols = array('mime','size','storage','uri');
 
 	function __construct ($id=false) {
-		global $Shopp;
 		$this->init(self::$table);
 		$this->extensions();
 		if (!$id) return;
 		$this->load($id);
 
+		if (!empty($this->id))
+			$this->expopulate();
 	}
 
-	/**
-	 * Load a FileAsset from the database
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.1
-	 *
-	 * @return void Description...
-	 **/
-	function load ($id) {
-		if (is_array($id)) parent::load($id);
-		parent::load(array('id'=>$id,'type'=>$this->type));
-		if (empty($this->id)) return false;
-		$this->expopulate();
-	}
 
 	/**
 	 * Populate extended fields loaded from the MetaObject
@@ -63,27 +50,8 @@ class FileAsset extends MetaObject {
 	 * @return void
 	 **/
 	function expopulate () {
-		if (is_object($this->value)) {
-			$properties = $this->value;
-			unset($this->value);
-			$this->copydata($properties);
-			$this->uri = stripslashes($this->uri);
-		}
-	}
-
-	/**
-	 * Save the object back to the database
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.1
-	 *
-	 * @return void
-	 **/
-	function save () {
-		$this->value = new stdClass();
-		foreach ($this->_xcols as $col)
-			$this->value->{$col} = $this->{$col};
-		parent::save();
+		parent::expopulate();
+		$this->uri = stripslashes($this->uri);
 	}
 
 	/**
@@ -211,9 +179,11 @@ class ImageAsset extends FileAsset {
 	var $type = 'image';
 
 	function output ($headers=true) {
+
 		if ($headers) {
 			$Engine = $this->_engine();
 			$data = $this->retrieve($this->uri);
+
 			$etag = md5($data);
 			$offset = 31536000;
 
@@ -231,12 +201,13 @@ class ImageAsset extends FileAsset {
 			header('Last-Modified: '.date('D, d M Y H:i:s', $this->modified).' GMT');
 			if (!empty($etag)) header('ETag: '.$etag);
 
-			header("Content-type: {$this->mime}");
-			if (!empty($this->filename))
-				header("Content-Disposition: inline; filename=".$this->filename);
-			else header("Content-Disposition: inline; filename=image-".$this->id.".jpg");
+			header("Content-type: $this->mime");
+
+		 	$filename = empty($this->filename) ? "image-$this->id.jpg" : $this->filename;
+			header('Content-Disposition: inline; filename="'.$filename.'"');
 			header("Content-Description: Delivered by WordPress/Shopp Image Server ({$this->storage})");
 		}
+
 		if (!empty($data)) echo $data;
 		else $Engine->output($this->uri);
 		ob_flush(); flush();
@@ -305,6 +276,33 @@ class ImageAsset extends FileAsset {
 
 	function extensions () {
 		array_push($this->_xcols,'filename','width','height','alt','title','settings');
+	}
+
+	/**
+	 * unique - returns true if the the filename is unique, or can be made unique reasonably
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @return bool true on success, false on fail
+	 **/
+	function unique () {
+		$Existing = new ImageAsset();
+		$Existing->uri = $this->filename;
+		$limit = 100;
+		while ( $Existing->found() ) { // Rename the filename of the image if it already exists
+			list( $name, $ext ) = explode(".", $Existing->uri);
+			$_ = explode("-", $name);
+			$last = count($_) - 1;
+			$suffix = $last > 0 ? intval($_[$last]) + 1 : 1;
+			if ( $suffix == 1 ) $_[] = $suffix;
+			else $_[$last] = $suffix;
+			$Existing->uri = join("-", $_).'.'.$ext;
+			if ( ! $limit-- ) return false;
+		}
+		if ( $Existing->uri !== $this->filename )
+			$this->filename = $Existing->uri;
+		return true;
 	}
 }
 
@@ -379,10 +377,10 @@ class DownloadAsset extends FileAsset {
 
 	function loadby_dkey ($key) {
 		$db = &DB::get();
-		require_once(SHOPP_MODEL_PATH."/Purchased.php");
+		if (!class_exists('Purchased')) require(SHOPP_MODEL_PATH."/Purchased.php");
 		$pricetable = DatabaseObject::tablename(Price::$table);
 
-		$Purchased = new Purchased($key,"dkey");
+		$Purchased = new Purchased($key,'dkey');
 		if (!empty($Purchased->id)) {
 			// Handle purchased line-item downloads
 			$Purchase = new Purchase($Purchased->purchase);
@@ -405,42 +403,62 @@ class DownloadAsset extends FileAsset {
 	}
 
 	function purchased () {
-		require_once(SHOPP_MODEL_PATH."/Purchased.php");
+		if (!class_exists('Purchased')) require(SHOPP_MODEL_PATH."/Purchased.php");
 		if (!$this->purchased) return false;
 		return new Purchased($this->purchased);
 	}
 
 	function download ($dkey=false) {
 		$found = $this->found();
-		if (!$found) return false;
+		if (!$found) return new ShoppError(sprintf(__('Download failed. "%s" could not be found.','Shopp'),$this->name),'false');
 
-		if (!isset($found['redirect'])) {
-			// Close the session in case of long download
-			@session_write_close();
+		add_action('shopp_download_success',array($this,'downloaded'));
 
-			// Don't want interference from the server
-		    if (function_exists('apache_setenv')) @apache_setenv('no-gzip', 1);
-		    @ini_set('zlib.output_compression', 0);
-
-			set_time_limit(0);	// Don't timeout on long downloads
-			// ob_end_clean();		// End any automatic output buffering
-
-			header("Pragma: public");
-			header("Cache-Control: maxage=1");
-			header("Content-type: application/octet-stream");
-			header("Content-Disposition: attachment; filename=\"".$this->name."\"");
-			header("Content-Description: Delivered by WordPress/Shopp ".SHOPP_VERSION);
+		// send immediately if the storage engine is redirecting
+		if ( isset($found['redirect']) ) {
+			$this->send();
+			exit();
 		}
-		$this->send();
+
+		// Close the session in case of long download
+		@session_write_close();
+
+		// Don't want interference from the server
+	    if (function_exists('apache_setenv')) @apache_setenv('no-gzip', 1);
+	    @ini_set('zlib.output_compression', 0);
+
+		set_time_limit(0);	// Don't timeout on long downloads
+
+		// Use HTTP/1.0 Expires to support bad browsers (trivia: timestamp used is the Shopp 1.0 release date)
+		header('Expires: '.date('D, d M Y H:i:s O',1230648947));
+
+		header('Cache-Control: maxage=0, no-cache, must-revalidate');
+		header('Content-type: application/octet-stream');
+		header("Content-Transfer-Encoding: binary");
+		header('Content-Disposition: attachment; filename="'.$this->name.'"');
+		header('Content-Description: Delivered by WordPress/Shopp '.SHOPP_VERSION);
+
+		ignore_user_abort(true);
+		ob_end_flush(); // Don't use the PHP output buffer
+
+		$this->send();	// Send the file data using the storage engine
+
+ 		flush(); // Flush output to browser (to poll for connection)
+		if (connection_aborted()) return new ShoppError(__('Connection broken. Download attempt failed.','Shopp'),'download_failure',SHOPP_COMM_ERR);
 
 		return true;
+	}
+
+	function downloaded ($Purchased=false) {
+		if (false === $Purchased) return;
+		$Purchased->downloads++;
+		$Purchased->save();
 	}
 
 	function send () {
 		$Engine = $this->_engine();
 		$Engine->output($this->uri,$this->etag);
 	}
-
 
 }
 
@@ -461,6 +479,7 @@ class ProductDownload extends DownloadAsset {
 class StorageEngines extends ModuleLoader {
 
 	var $engines = array();
+	var $contexts = array('image','download');
 	var $activate = false;
 
 	/**
@@ -495,8 +514,8 @@ class StorageEngines extends ModuleLoader {
 		$this->activated = array();
 
 		$systems = array();
-		$systems['image'] = $Shopp->Settings->get('image_storage');
-		$systems['download'] = $Shopp->Settings->get('product_storage');
+		$systems['image'] = shopp_setting('image_storage');
+		$systems['download'] = shopp_setting('product_storage');
 
 		foreach ($systems as $system => $storage) {
 			foreach ($this->modules as $engine) {
@@ -512,6 +531,21 @@ class StorageEngines extends ModuleLoader {
 	}
 
 	/**
+	 * Get a specified shipping module
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void Description...
+	 **/
+	function &get ($module) {
+		if (empty($this->active)) $this->settings();
+		if (!isset($this->active[$module])) return false;
+		return $this->active[$module];
+	}
+
+
+	/**
 	 * Loads all the installed storage engine modules for the settings page
 	 *
 	 * @author Jonathan Davis
@@ -524,17 +558,27 @@ class StorageEngines extends ModuleLoader {
 	}
 
 	/**
-	 * Sets up the storage engine settings interfaces
+	 * Initializes the settings UI for each loaded module
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
 	 *
-	 * @return void
+	 * @return void Description...
 	 **/
 	function ui () {
-		foreach ($this->active as $package => &$module)
-			$module->setupui($package,$this->modules[$package]->name);
+		foreach ($this->contexts as $context) {
+			foreach ($this->active as $package => &$module) {
+				$module->context($context);
+				$module->initui($package,$context);
+			}
+		}
 	}
+
+	function templates () {
+		foreach ($this->active as $package => &$module)
+			$module->uitemplate($package,$this->modules[$package]->name);
+	}
+
 
 	function actions ($module) {
 		if (!isset($this->active[$module])) return;
@@ -627,14 +671,11 @@ abstract class StorageModule {
 	function __construct () {
 		global $Shopp;
 		$this->module = get_class($this);
-		if (!isset($Shopp->Settings)) {
-			$Settings = new Settings($this->module);
-			$this->settings = $Settings->get($this->module);
-		} else $this->settings = $Shopp->Settings->get($this->module);
+		$this->settings = shopp_setting($this->module);
 	}
 
 	function context ($setting) {}
-	function settings () {}
+	function settings ($context) {}
 
 	/**
 	 * Generate the settings UI for the module
@@ -646,10 +687,10 @@ abstract class StorageModule {
 	 * @param string $name The formal name of the module
 	 * @return void
 	 **/
-	function setupui ($module,$name) {
-		$this->ui = new ModuleSettingsUI('storage',$module,$name,false,false);
-		$this->settings();
-	}
+	// function setupui ($module,$name) {
+	// 	$this->ui = new StorageSettingsUI('storage',$module,$name,false,false);
+	// 	$this->settings();
+	// }
 
 	function output ($uri) {
 		$data = $this->load($uri);
@@ -657,7 +698,7 @@ abstract class StorageModule {
 		echo $data;
 	}
 
-	function meta () {
+	function meta ($arg1=false,$arg2=false) {
 		return false;
 	}
 
@@ -665,6 +706,290 @@ abstract class StorageModule {
 		return in_array($context,$this->contexts);
 	}
 
+	/**
+	 * Generate the settings UI for the module
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param string $module The module class name
+	 * @param string $name The formal name of the module
+	 * @return void
+	 **/
+	function initui ($name,$context) {
+		$label = isset($this->settings['label'])?$this->settings['label']:$name;
+		if (!isset($this->ui) || !is_array($this->ui)) $this->ui = array();
+		$this->ui[$context] = new StorageSettingsUI($this,$name);
+		$this->settings($context);
+	}
+
+	function uitemplate () {
+		$this->ui['image']->template();
+	}
+
+	function ui ($context) {
+		$editor = $this->ui[$context]->generate();
+
+		$data = array('${context}' => $context);
+		foreach ($this->settings as $name => $value)
+			$data['${'.$name.'}'] = $value[$context];
+
+		return str_replace(array_keys($data),$data,$editor);
+	}
+
+
 }
+
+class StorageSettingsUI extends ModuleSettingsUI {
+
+	function generate () {
+
+		$_ = array();
+		$_[] = '<div id="'.$this->id.'-settings">';
+		foreach ($this->markup as $markup) {
+			if (empty($markup)) continue;
+			else $_[] = join("\n",$markup);
+		}
+
+		$_[] = '</div>';
+
+		return join("\n",$_);
+
+	}
+
+	/**
+	 * Renders a checkbox input
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; use 'checked' to set whether the element is toggled on or not
+	 *
+	 * @return void
+	 **/
+	function checkbox ($column=0,$attributes=array()) {
+ 		if (isset($attributes['name']))
+			$attributes['name'] .= '][${context}';
+		parent::checkbox($column,$attributes,$options);
+	}
+
+	/**
+	 * Renders a drop-down menu element
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; use 'selected' to set the selected option
+	 * @param array $options The available options in the menu
+	 *
+	 * @return void
+	 **/
+	function menu ($column=0,$attributes=array(),$options=array()) {
+		$attributes['title'] = '${'.$attributes['name'].'}';
+ 		if (isset($attributes['name']))
+			$attributes['name'] .= '][${context}';
+		parent::menu($column,$attributes,$options);
+	}
+
+	/**
+	 * Renders a multiple-select widget
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; pass a 'selected' attribute as an array to set the selected options
+	 * @param array $options The available options in the menu
+	 *
+	 * @return void
+	 **/
+	function multimenu ($column=0,$attributes=array(),$options=array()) {
+ 		if (isset($attributes['name']))
+			$attributes['name'] .= '][${context}';
+		parent::multimenu($column,$attributes,$options);
+	}
+
+	/**
+	 * Renders a text input
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; requires a 'name' attribute
+	 *
+	 * @return void
+	 **/
+	function input ($column=0,$attributes=array()) {
+ 		if (isset($attributes['name'])) {
+			$name = $attributes['name'];
+			$attributes['value'] = '${'.$name.'}';
+			$attributes['name'] .= '][${context}';
+		}
+		parent::input($column,$attributes);
+	}
+
+
+	/**
+	 * Renders a text input
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; requires a 'name' attribute
+	 *
+	 * @return void
+	 **/
+	function textarea ($column=0,$attributes=array()) {
+		if (isset($attributes['name'])) {
+			$name = $attributes['name'];
+			$attributes['value'] = '${'.$name.'}';
+			$attributes['name'] .= '][${context}';
+		}
+ 		parent::textarea($column,$attributes);
+	}
+
+
+	/**
+	 * Renders a styled button element
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param int $column The table column to add the element to
+	 * @param array $attributes Element attributes; requires a 'name' attribute
+	 *
+	 * @return void
+	 **/
+	function button ($column=0,$attributes=array()) {
+ 		if (isset($attributes['name'])) {
+			$name = $attributes['name'];
+			$attributes['value'] = '${'.$name.'}';
+			$attributes['name'] .= '][${context}';
+		}
+		parent::button($column,$attributes);
+	}
+
+	function behaviors ($script) {
+		shopp_custom_script('system-settings',$script);
+	}
+
+}
+
+
+// Prevent loading image setting classes when run in image server script context
+if ( !class_exists('RegistryManager') ) return;
+
+class ImageSetting extends MetaObject {
+
+	static $qualities = array(100,92,80,70,60);
+	static $fittings = array('all','matte','crop','width','height');
+
+	var $width;
+	var $height;
+	var $fit = 0;
+	var $quality = 100;
+	var $sharpen = 100;
+	var $bg = false;
+	var $context = 'setting';
+	var $type = 'image_setting';
+	var $_xcols = array('width','height','fit','quality','sharpen','bg');
+
+	function __construct ($id=false,$key='id') {
+		$this->init(self::$table);
+		$this->load($id,$key);
+	}
+
+	function fit_menu () {
+ 		return array(	__('All','Shopp'),
+						__('Fill','Shopp'),
+						__('Crop','Shopp'),
+						__('Width','Shopp'),
+						__('Height','Shopp')
+					);
+	}
+
+	function quality_menu () {
+		return array(	__('Highest quality, largest file size','Shopp'),
+						__('Higher quality, larger file size','Shopp'),
+						__('Balanced quality &amp; file size','Shopp'),
+						__('Lower quality, smaller file size','Shopp'),
+						__('Lowest quality, smallest file size','Shopp')
+					);
+	}
+
+	function fit_value ($value) {
+		if (isset(self::$fittings[$value])) return self::$fittings[$value];
+		return self::$fittings[0];
+	}
+
+	function quality_value ($value) {
+		if (isset(self::$qualities[$value])) return self::$qualities[$value];
+		return self::$qualities[2];
+	}
+
+	function options ($prefix='') {
+		$settings = array();
+		$properties = array('width','height','fit','quality','sharpen','bg');
+		foreach ($properties as $property) {
+			$value = $this->{$property};
+			if ('quality' == $property) $value = $this->quality_value($this->{$property});
+			if ('fit' == $property) $value = $this->fit_value($this->{$property});
+			$settings[$prefix.$property] = $value;
+		}
+		return $settings;
+	}
+
+} // END class ImageSetting
+
+class ImageSettings extends RegistryManager {
+
+	private static $instance;
+
+	function __construct () {
+		$ImageSetting = new ImageSetting();
+		$table = $ImageSetting->_table;
+		$where = array(
+			"type='$ImageSetting->type'",
+			"context='$ImageSetting->context'"
+		);
+		$options = compact('table','where');
+		$query = DB::select($options);
+		$this->populate(DB::query($query,'array',array($ImageSetting,'loader'),false,'name'));
+		$this->found = DB::found();
+	}
+
+	/**
+	 * Prevents cloning the DB singleton
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @return void
+	 **/
+	function __clone () { trigger_error('Clone is not allowed.', E_USER_ERROR); }
+
+	/**
+	 * Provides a reference to the instantiated singleton
+	 *
+	 * The ImageSettings class uses a singleton to ensure only one DB object is
+	 * instantiated at any time
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @return DB Returns a reference to the DB object
+	 **/
+	static function &__instance () {
+		if (!self::$instance instanceof self)
+			self::$instance = new self;
+		return self::$instance;
+	}
+
+
+} // END class ImageSettings
 
 ?>

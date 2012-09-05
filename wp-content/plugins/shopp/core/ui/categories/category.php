@@ -1,8 +1,9 @@
 <div class="wrap shopp">
-	<?php if (!empty($this->Notice)): ?><div id="message" class="updated fade"><p><?php echo $this->Notice; ?></p></div><?php endif; ?>
 
 	<div class="icon32"></div>
 	<h2><?php _e('Category Editor','Shopp'); ?></h2>
+
+	<?php do_action('shopp_admin_notice'); ?>
 
 	<div id="ajax-response"></div>
 	<form name="category" id="category" action="<?php echo admin_url('admin.php'); ?>" method="post">
@@ -14,7 +15,7 @@
 
 			<?php
 			do_action('submitpage_box');
-			$side_meta_boxes = do_meta_boxes('shopp_page_shopp-products', 'side', $Category);
+			$side_meta_boxes = do_meta_boxes('shopp_page_shopp-category', 'side', $Category);
 			?>
 			</div>
 
@@ -26,10 +27,14 @@
 						<input name="name" id="title" type="text" value="<?php echo esc_attr($Category->name); ?>" size="30" tabindex="1" autocomplete="off" />
 					</div>
 					<div class="inside">
-						<?php if (SHOPP_PRETTYURLS && !empty($Category->id)): ?>
+						<?php if ('' != get_option('permalink_structure') && !empty($Category->id)): ?>
 						<div id="edit-slug-box"><strong><?php _e('Permalink','Shopp'); ?>:</strong>
 						<span id="sample-permalink"><?php echo $permalink; ?><span id="editable-slug" title="<?php _e('Click to edit this part of the permalink','Shopp'); ?>"><?php echo esc_attr($Category->slug); ?></span><span id="editable-slug-full"><?php echo esc_attr($Category->slug); ?></span>/</span>
-						<span id="edit-slug-buttons"><button type="button" class="edit-slug button">Edit</button></span>
+						<span id="edit-slug-buttons">
+							<button type="button" class="edit button"><?php _e('Edit','Shopp'); ?></button><?php if (!empty($Category->id)): ?><a href="<?php echo esc_url(shopp($Category,'get-url')); ?>" id="view-product" class="view button"><?php _e('View','Shopp'); ?></a><?php endif; ?></span>
+						<span id="editor-slug-buttons">
+							<button type="button" class="save button"><?php _e('Save','Shopp'); ?></button> <button type="button" class="cancel button"><?php _e('Cancel','Shopp'); ?></button>
+						</span>
 						</div>
 						<?php endif; ?>
 					</div>
@@ -40,8 +45,8 @@
 				</div>
 
 			<?php
-			do_meta_boxes('shopp_page_shopp-products', 'normal', $Category);
-			do_meta_boxes('shopp_page_shopp-products', 'advanced', $Category);
+			do_meta_boxes('shopp_page_shopp-category', 'normal', $Category);
+			do_meta_boxes('shopp_page_shopp-category', 'advanced', $Category);
 			?>
 
 			</div>
@@ -61,21 +66,24 @@ var flashuploader = <?php echo ($uploader == 'flash' && !(false !== strpos(strto
 	options = <?php echo json_encode($Category->options) ?>,
 	prices = <?php echo json_encode($Category->prices) ?>,
 	uidir = '<?php echo SHOPP_ADMIN_URI; ?>',
-	siteurl = '<?php echo $Shopp->siteurl; ?>',
-	adminurl = '<?php echo $Shopp->wpadminurl; ?>',
+	siteurl = '<?php bloginfo('url'); ?>',
+	adminurl = '<?php echo SHOPP_WPADMIN_URL; ?>',
+	canonurl = '<?php echo trailingslashit(shoppurl( '' != get_option('permalink_structure') ? get_class_property('ProductCategory','namespace') : $Category->taxonomy.'=' )); ?>',
 	ajaxurl = adminurl+'admin-ajax.php',
-	addcategory_url = '<?php echo wp_nonce_url($Shopp->wpadminurl."admin-ajax.php", "shopp-ajax_add_category"); ?>',
-	editslug_url = '<?php echo wp_nonce_url($Shopp->wpadminurl."admin-ajax.php", "wp_ajax_shopp_edit_slug"); ?>',
-	fileverify_url = '<?php echo wp_nonce_url($Shopp->wpadminurl."admin-ajax.php", "shopp-ajax_verify_file"); ?>',
+	addcategory_url = '<?php echo wp_nonce_url(SHOPP_WPADMIN_URL."admin-ajax.php", "shopp-ajax_add_category"); ?>',
+	editslug_url = '<?php echo wp_nonce_url(SHOPP_WPADMIN_URL."admin-ajax.php", "wp_ajax_shopp_edit_slug"); ?>',
+	fileverify_url = '<?php echo wp_nonce_url(SHOPP_WPADMIN_URL."admin-ajax.php", "shopp-ajax_verify_file"); ?>',
 	adminpage = '<?php echo $this->Admin->pagename('categories'); ?>',
 	request = <?php echo json_encode(stripslashes_deep($_GET)); ?>,
 	worklist = <?php echo json_encode($this->categories(true)); ?>,
 	filesizeLimit = <?php echo wp_max_upload_size(); ?>,
 	priceTypes = <?php echo json_encode($priceTypes) ?>,
-	weightUnit = '<?php echo $this->Settings->get('weight_unit'); ?>',
+	billPeriods = <?php echo json_encode($billPeriods) ?>,
+	weightUnit = '<?php echo shopp_setting('weight_unit'); ?>',
+	dimensionUnit = '<?php echo shopp_setting('dimension_unit'); ?>',
 	dimensionsRequired = <?php echo $Shopp->Shipping->dimensions?'true':'false'; ?>,
-	storage = '<?php echo $this->Settings->get('product_storage'); ?>',
-	productspath = '<?php /* realpath needed for relative paths */ chdir(WP_CONTENT_DIR); echo addslashes(trailingslashit(sanitize_path(realpath($this->Settings->get('products_path'))))); ?>',
+	storage = '<?php echo shopp_setting('product_storage'); ?>',
+	productspath = '<?php /* realpath needed for relative paths */ chdir(WP_CONTENT_DIR); echo addslashes(trailingslashit(sanitize_path(realpath(shopp_setting('products_path'))))); ?>',
 	imageupload_debug = <?php echo (defined('SHOPP_IMAGEUPLOAD_DEBUG') && SHOPP_IMAGEUPLOAD_DEBUG)?'true':'false'; ?>,
 	fileupload_debug = <?php echo (defined('SHOPP_FILEUPLOAD_DEBUG') && SHOPP_FILEUPLOAD_DEBUG)?'true':'false'; ?>,
 
@@ -105,7 +113,11 @@ var flashuploader = <?php echo ($uploader == 'flash' && !(false !== strpos(strto
 	NOTAX_LABEL = "<?php _e('Not Taxed','Shopp'); ?>",
 	SHIPPING_LABEL = "<?php _e('Shipping','Shopp'); ?>",
 	FREE_SHIPPING_TEXT = "<?php _e('Free Shipping','Shopp'); ?>",
-	WEIGHT_LABEL = "<?php _e('Weight','Shopp'); ?>",
+	WEIGHT_LABEL = <?php _jse('Weight','Shopp'); ?>,
+	LENGTH_LABEL = <?php _jse('Length','Shopp'); ?>,
+	WIDTH_LABEL = <?php _jse('Width','Shopp'); ?>,
+	HEIGHT_LABEL = <?php _jse('Height','Shopp'); ?>,
+	DIMENSIONAL_WEIGHT_LABEL = <?php _jse('3D Weight','Shopp'); ?>,
 	SHIPFEE_LABEL = "<?php _e('Handling Fee','Shopp'); ?>",
 	SHIPFEE_XTRA = "<?php _e('Amount added to shipping costs for each unit ordered (for handling costs, etc)','Shopp'); ?>",
 	INVENTORY_LABEL = "<?php _e('Inventory','Shopp'); ?>",
@@ -116,9 +128,14 @@ var flashuploader = <?php echo ($uploader == 'flash' && !(false !== strpos(strto
 	SKU_XTRA = "<?php _e('Enter a unique stock keeping unit identification code.','Shopp'); ?>",
 	DONATIONS_VAR_LABEL = "<?php _e('Accept variable amounts','Shopp'); ?>",
 	DONATIONS_MIN_LABEL = "<?php _e('Amount required as minimum','Shopp'); ?>",
+	BILLCYCLE_LABEL = <?php _jse('Billing Cycle','Shopp'); ?>,
+	TRIAL_LABEL = <?php _jse('Trial Period','Shopp'); ?>,
+	NOTRIAL_TEXT = <?php _jse('No trial period','Shopp'); ?>,
+	TIMES_LABEL = <?php _jse('times','Shopp'); ?>,
+	MEMBERSHIP_LABEL = <?php _jse('Membership','Shopp'); ?>,
 	PRODUCT_DOWNLOAD_LABEL = "<?php _e('Product Download','Shopp'); ?>",
-	NO_PRODUCT_DOWNLOAD_TEXT = "<?php _e('No product download.','Shopp'); ?>",
-	NO_DOWNLOAD = "<?php _e('No download file.','Shopp'); ?>",
+	NO_PRODUCT_DOWNLOAD_TEXT = "<?php _e('No product download','Shopp'); ?>",
+	NO_DOWNLOAD = "<?php _e('No download file','Shopp'); ?>",
 	UNKNOWN_UPLOAD_ERROR = "<?php _e('An unknown error occurred. The upload could not be saved.','Shopp'); ?>",
 	DEFAULT_PRICELINE_LABEL = "<?php _e('Price & Delivery','Shopp'); ?>",
 	FILE_NOT_FOUND_TEXT = "<?php _e('The file you specified could not be found.','Shopp'); ?>",

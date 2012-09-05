@@ -13,8 +13,8 @@ if ( class_exists('WP_Widget') && ! class_exists('ShoppCategorySectionWidget') )
 
 class ShoppCategorySectionWidget extends WP_Widget {
 
-    function ShoppCategorySectionWidget() {
-        parent::WP_Widget(false,
+    function __construct() {
+        parent::__construct(false,
 			$name = __('Shopp Category Section','Shopp'),
 			array('description' => __('A list or dropdown of store categories'))
 		);
@@ -26,8 +26,8 @@ class ShoppCategorySectionWidget extends WP_Widget {
 
 		$title = $before_title.$options['title'].$after_title;
 		unset($options['title']);
-		if (empty($Shopp->Category->id)) return false;
-		$menu = $Shopp->Category->tag('section-list',$options);
+		if (empty(ShoppCollection()->id)) return false;
+		$menu = shopp(ShoppCollection(),'get-section-list',$options);
 		echo $before_widget.$title.$menu.$after_widget;
     }
 
@@ -36,8 +36,6 @@ class ShoppCategorySectionWidget extends WP_Widget {
     }
 
     function form($options) {
-		global $Shopp;
-
 		?>
 		<p><label for="<?php echo $this->get_field_id('title'); ?>"><?php _e('Title'); ?></label>
 		<input type="text" name="<?php echo $this->get_field_name('title'); ?>" id="<?php echo $this->get_field_id('title'); ?>" class="widefat" value="<?php echo $options['title']; ?>"></p>

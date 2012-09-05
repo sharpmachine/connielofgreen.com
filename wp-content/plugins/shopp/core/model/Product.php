@@ -12,12 +12,17 @@
  * @subpackage products
  **/
 
-require_once("Asset.php");
-require_once("Price.php");
-require_once("Promotion.php");
+require("Price.php");
+require("Promotion.php");
 
-class Product extends DatabaseObject {
-	static $table = "product";
+class Product extends WPShoppObject {
+	static $table = 'posts';
+	static $_taxonomies = array(
+		'shopp_category' => 'categories',
+		'shopp_tag' => 'tags'
+	);
+	static $posttype = 'shopp_product';
+
 	var $prices = array();
 	var $pricekey = array();
 	var $priceid = array();
@@ -25,226 +30,470 @@ class Product extends DatabaseObject {
 	var $tags = array();
 	var $images = array();
 	var $specs = array();
+	var $specnames = array();
+	var $meta = array();
 	var $max = array();
 	var $min = array();
-	var $onsale = false;
-	var $freeshipping = false;
+	var $sale = false;
 	var $outofstock = false;
+	var $excludetax = false;
+	var $variants = 'off';
+	var $addons = 'off';
+	var $freeship = 'off';
+	var $inventory = 'off';
+	var $checksum = false;
 	var $stock = 0;
 	var $options = 0;
 
-	function __construct ($id=false,$key=false) {
-		$this->init(self::$table);
+	protected $_map = array(
+		'id' => 'ID',
+		'name' => 'post_title',
+		'slug' => 'post_name',
+		'summary' => 'post_excerpt',
+		'description' => 'post_content',
+		'status' => 'post_status',
+		'type' => 'post_type',
+		'publish' => 'post_date',
+		'modified' => 'post_modified',
+		'post_date_gmt' => 'post_date_gmt',
+		'post_modified_gmt' => 'post_modified_gmt',
+		'post_content_filtered' => 'post_content_filtered',
+		'comment_status' => 'comment_status',
+		'ping_status' => 'ping_status',
+		'to_ping' => 'to_ping',
+		'pinged' => 'pinged'
+	);
+
+	/**
+	 * Product constructor
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function __construct ($id=false,$key='ID') {
+		if (isset($this->_map[$key])) $key = $this->_map[$key];
+		$this->init(self::$table,$key);
+		$this->type = self::$posttype;
 		$this->load($id,$key);
+		add_action('shopp_save_product',array($this,'savepost'));
+	}
+
+	function save () {
+		if ( ! isset($this->ID) ) $this->ID = $this->id ? $this->id : null;
+		$this->post_content_filtered = $this->to_ping = $this->pinged = '';
+		$gmtoffset = get_option( 'gmt_offset' ) * 3600;
+		$this->post_modified_gmt = current_time('timestamp')+$gmtoffset;
+		if (is_null($this->publish)) $this->post_date_gmt = $this->post_modified_gmt;
+		else $this->post_date_gmt = $this->publish+$gmtoffset;
+		parent::save();
 	}
 
 	/**
-	 * Loads specified relational data associated with the product
+	 * Provides compatibility with other plugins that handle custom post types
 	 *
 	 * @author Jonathan Davis
-	 * @since 1.1
+	 * @since 1.2
 	 *
-	 * @param array $options List of data to load (prices, images, categories, tags, specs)
-	 * @param array $products List of products to load data for
 	 * @return void
 	 **/
-	function load_data ($options=false,&$products=false) {
-		global $Shopp;
-		$db =& DB::get();
+	function savepost () {
+		if ( empty($this->id)) return;
+		do_action('save_post', $this->id, get_post($this->id));
+	}
 
-		// Load object schemas on request
+	static function posttype () {
+		return self::$posttype;
+	}
 
-		$catalogtable = DatabaseObject::tablename(Catalog::$table);
+	static function labels () {
+		return apply_filters( 'shopp_product_labels', array(
+			'name' => __('Products','Shopp'),
+			'singular_name' => __('Product','Shopp'),
+			'edit_item' => __('Edit Product','Shopp'),
+			'new_item' => __('New Product','Shopp')
+		));
+	}
 
-		$Dataset = array();
-		if (in_array('prices',$options)) {
-			$this->prices = array();
-			$promotable = DatabaseObject::tablename(Promotion::$table);
-			$discounttable = DatabaseObject::tablename(Discount::$table);
-			$assettable = DatabaseObject::tablename(ProductDownload::$table);
+	static function capabilities () {
+		return apply_filters( 'shopp_product_capabilities', array(
+			'edit_post' => 'shopp_products',
+			'delete_post' => 'shopp_products'
+		) );
+	}
 
-			$Dataset['prices'] = new Price();
-			$Dataset['prices']->_datatypes['promos'] = "MAX(promo.status)";
-			$Dataset['prices']->_datatypes['promotions'] = "group_concat(promo.name)";
-			$Dataset['prices']->_datatypes['percentoff'] = "SUM(IF (promo.type='Percentage Off',promo.discount,0))";
-			$Dataset['prices']->_datatypes['amountoff'] = "SUM(IF (promo.type='Amount Off',promo.discount,0))";
-			$Dataset['prices']->_datatypes['freeshipping'] = "SUM(IF (promo.type='Free Shipping',1,0))";
-			$Dataset['prices']->_datatypes['buyqty'] = "IF (promo.type='Buy X Get Y Free',promo.buyqty,0)";
-			$Dataset['prices']->_datatypes['getqty'] = "IF (promo.type='Buy X Get Y Free',promo.getqty,0)";
-			$Dataset['prices']->_datatypes['download'] = "download.id";
-			$Dataset['prices']->_datatypes['filename'] = "download.name";
-			$Dataset['prices']->_datatypes['filedata'] = "download.value";
+	/**
+	 * Loads relational data into the Product object
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @todo Add restat option handling to pass on to the price loader
+	 *
+	 * @return void
+	 **/
+	function load_data ($options=array('prices','specs','images','categories','tags','meta','summary'),&$products=array()) {
+		// Load summary before prices to ensure summary can be overridden by fresh pricing aggregation
+		$loaders = array(
+		//  'name'      'callback_method'
+			'summary' 	 => 'load_summary',
+			'meta' 		 => 'load_meta',
+			'prices' 	 => 'load_prices',
+			'specs' 	 => 'load_meta',
+			'images' 	 => 'load_meta',
+			'coverimages'=> 'load_coverimages',
+			'categories' => 'load_taxonomies',
+			'tags' 		 => 'load_taxonomies'
+
+		);
+
+		$options = array_map('strtolower',$options);
+		$load = array_flip(array_intersect($options,array_keys($loaders)));
+		$loadcalls = array_unique(array_values(array_intersect_key($loaders,$load)));
+
+		if (!empty($products) ) {
+			$ids = join(',',array_keys($products));
+			$this->products = &$products;
+		} else $ids = $this->id;
+
+		if ( empty($ids) ) return;
+
+		foreach ($loadcalls as $loadmethod) {
+			if ( method_exists($this, $loadmethod) )
+				call_user_func_array(array($this,$loadmethod),array($ids));
 		}
 
-		if (in_array('images',$options)) {
-			$this->images = array();
-			$Dataset['images'] = new ProductImage();
-			array_merge($Dataset['images']->_datatypes,$Dataset['images']->_xcols);
+	}
+
+	/**
+	 * Loads product aggregate summary data
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_summary ($ids) {
+		if ( empty($ids) ) return;
+		$Object = new ProductSummary();
+		DB::query("SELECT *,modified AS summed FROM $Object->_table WHERE product IN ($ids)",'array',array($this,'sumloader'));
+	}
+
+	/**
+	 * Loads price records and populates the product
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_prices ($ids) {
+		if ( empty($ids) ) return;
+
+		// Reset price property
+		$this->prices = array();
+
+		// Reset summary properties for correct price range and stock sums in single product (product page) loading contexts
+		if (!empty($this->id) && $this->id == $ids) {
+			$this->load_summary($ids);
+			$this->resum();
 		}
 
-		if (in_array('categories',$options)) {
-			$this->categories = array();
-			$Dataset['categories'] = new Category();
-			unset($Dataset['categories']->_datatypes['priceranges']);
-			unset($Dataset['categories']->_datatypes['specs']);
-			unset($Dataset['categories']->_datatypes['options']);
-			unset($Dataset['categories']->_datatypes['prices']);
+		$Object = new Price();
+		DB::query("SELECT * FROM $Object->_table WHERE product IN ($ids) ORDER BY product,optionkey",'array',array($this,'pricing'));
+
+		// Load price metadata that exists
+		if (!empty($this->priceid)) {
+			$prices = join(',',array_keys($this->priceid));
+			$Object->prices = $this->priceid;
+			$Object->products = ( isset($this->products) && !empty($this->products) )?$this->products:$this;
+			$ObjectMeta = new ObjectMeta();
+			// Sort by sort order then by the modified timestamp so the most recent changes are last and become the authoritative record
+			DB::query("SELECT * FROM $ObjectMeta->_table WHERE context='price' AND parent IN ($prices) ORDER BY sortorder,modified",'array',array($Object,'metaloader'),'parent','metatype','name',false);
 		}
 
-		if (in_array('specs',$options)) {
-			$this->specs = array();
-			$Dataset['specs'] = new Spec();
+		// Load product sales counts
+		$this->load_sold($ids);
+
+		if ( isset($this->products) && !empty($this->products) ) {
+			if (!isset($this->_last_product)) $this->_last_product = false;
+
+			if ( $this->_last_product != false
+					&& isset($this->products[$this->_last_product]) )
+				$this->products[$this->_last_product]->sumup();
+		} else $this->sumup();
+
+	}
+
+	/**
+	 * Loads all product meta data (meta,specs,images)
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_meta ($ids) {
+		if ( empty($ids) ) return;
+		$table = DatabaseObject::tablename(MetaObject::$table);
+
+		$imagesort = $this->image_order();
+		$metasort = array('sortorder','sortorder ASC');
+		if (in_array($imagesort,$metasort))
+			DB::query("SELECT * FROM $table WHERE context='product' AND parent IN ($ids) ORDER BY sortorder",'array',array($this,'metaloader'),'parent','metatype','name',false);
+		else { // Separate sort order for images
+			DB::query("SELECT * FROM $table WHERE context='product' AND type != 'image' AND parent IN ($ids) ORDER BY sortorder",'array',array($this,'metaloader'),'parent','metatype','name',false);
+			DB::query("SELECT * FROM $table WHERE context='product' AND type = 'image' AND parent IN ($ids) ORDER BY $imagesort",'array',array($this,'metaloader'),'parent','metatype','name',false);
 		}
+	}
 
-		if (in_array('tags',$options)) {
-			$this->tags = array();
-			$Dataset['tags'] = new Tag();
-		}
+	/**
+	 * Loads the cover image (first image) of the product image set
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_coverimages ($ids) {
+		if ( empty($ids) ) return;
+		$table = DatabaseObject::tablename(MetaObject::$table);
+		$sortorder = $this->image_order();
+		DB::query("SELECT * FROM ( SELECT * FROM $table WHERE context='product' AND type='image' AND parent IN ($ids) ORDER BY $sortorder ) AS img GROUP BY parent",'array',array($this,'metaloader'),'parent','metatype','name',false);
+	}
 
-		// Determine the maximum columns to allocate
-		$maxcols = 0;
-		foreach ($Dataset as $set) {
-			$cols = count($set->_datatypes);
-			if ($cols > $maxcols) $maxcols = $cols;
-		}
+	/**
+	 * Loads the aggregate product sales data
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_sold ($ids) {
+		if ( empty($ids) ) return;
+		$purchase = DatabaseObject::tablename(Purchase::$table);
+		$purchased = DatabaseObject::tablename(Purchased::$table);
+		$query = "SELECT p.product as id,sum(p.quantity) AS sold,sum(p.total) AS grossed FROM $purchased as p INNER JOIN $purchase AS o ON p.purchase=o.id WHERE p.product IN ($ids) AND o.txnstatus !='void' GROUP BY p.product";
+		DB::query($query,'array',array($this,'sold'));
+	}
 
-		// Prepare product list depending on single product or entire list
-		$ids = array();
-		if (isset($products) && is_array($products)) {
-			foreach ($products as $product) $ids[] = $product->id;
-		} else $ids[0] = $this->id;
+	/**
+	 * Loads assigned taxonomies
+	 *
+	 * Loads both shopp_category and shopp_tag built-in custom taxonomies as well
+	 * as other user-defined taxonomies assigned to the Shopp product custom post type
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function load_taxonomies ($ids) {
+		global $ShoppTaxonomies;
 
-		// Skip if there are no product ids
-		if (empty($ids) || empty($ids[0])) return false;
+		if ( empty($ids) ) return;
 
-		// Build the mega-query
-		foreach ($Dataset as $rtype => $set) {
+		if (isset($this->products) && !empty($this->products)) {
+			$products = &$this->products;
+			$ids = array_keys($this->products);
+		} else $ids = array($this->id);
 
-			// Allocate generic columns for record data
-			$columns = array(); $i = 0;
-			foreach ($set->_datatypes as $key => $datatype)
-				$columns[] = ((strpos($datatype,'.')!==false)?"$datatype":"{$set->_table}.$key")." AS c".($i++);
-			for ($i = $i; $i < $maxcols; $i++)
-				$columns[] = "'' AS c$i";
+		$taxonomies = get_object_taxonomies( self::$posttype );
+		$terms = wp_get_object_terms($ids,$taxonomies,array('fields' => 'all_with_object_id'));
 
-			$cols = join(',',$columns);
-
-			// Build object-specific selects and UNION them
-			$where = "";
-			if (isset($query)) $query .= " UNION ";
-			else $query = "";
-			switch($rtype) {
-				case "prices":
-					foreach ($ids as $id) $where .= ((!empty($where))?" OR ":"")."$set->_table.product=$id";
-					$query .= "(SELECT '$set->_table' as dataset,$set->_table.product AS product,'$rtype' AS rtype,'' AS alphaorder,$set->_table.sortorder AS sortorder,$cols FROM $set->_table
-								LEFT JOIN $assettable AS download ON $set->_table.id=download.parent AND download.context='price' AND download.type='download'
-								LEFT JOIN $discounttable AS discount ON discount.product=$set->_table.product AND discount.price=$set->_table.id
-								LEFT JOIN $promotable AS promo ON promo.id=discount.promo AND
-								(promo.status='enabled' AND ((UNIX_TIMESTAMP(starts)=1 AND UNIX_TIMESTAMP(ends)=1)
-								OR (".time()." > UNIX_TIMESTAMP(starts) AND ".time()." < UNIX_TIMESTAMP(ends))
-								OR (UNIX_TIMESTAMP(starts)=1 AND ".time()." < UNIX_TIMESTAMP(ends))
-								OR (".time()." > UNIX_TIMESTAMP(starts) AND UNIX_TIMESTAMP(ends)=1) ))
-								WHERE $where GROUP BY $set->_table.id)";
-					break;
-				case "images":
-					$ordering = $Shopp->Settings->get('product_image_order');
-					if (empty($ordering)) $ordering = "ASC";
-					$orderby = $Shopp->Settings->get('product_image_orderby');
-
-					$sortorder = "0";
-					if ($orderby == "sortorder" || $orderby == "created") {
-						if ($orderby == "created") $orderby = "UNIX_TIMESTAMP(created)";
-						switch ($ordering) {
-							case "DESC": $sortorder = "$orderby*-1"; break;
-							case "RAND": $sortorder = "RAND()"; break;
-							default: $sortorder = "$orderby";
-						}
-					}
-
-					$alphaorder = "''";
-					if ($orderby == "name") {
-						switch ($ordering) {
-							case "DESC": $alphaorder = "$orderby"; break;
-							case "RAND": $alphaorder = "RAND()"; break;
-							default: $alphaorder = "$orderby";
-						}
-					}
-
-					foreach ($ids as $id) $where .= ((!empty($where))?" OR ":"")."parent=$id";
-					$where = "($where) AND context='product' AND type='image'";
-					$query .= "(SELECT '$set->_table' as dataset,parent AS product,'$rtype' AS rtype,$alphaorder AS alphaorder,$sortorder AS sortorder,$cols FROM $set->_table WHERE $where ORDER BY $orderby)";
-					break;
-				case "specs":
-					foreach ($ids as $id) $where .= ((!empty($where))?" OR ":"")."parent=$id AND context='product' AND type='spec'";
-					$query .= "(SELECT '$set->_table' as dataset,parent AS product,'$rtype' AS rtype,'' AS alphaorder,sortorder AS sortorder,$cols FROM $set->_table WHERE $where)";
-					break;
-				case "categories":
-					foreach ($ids as $id) $where .= ((!empty($where))?" OR ":"")."catalog.product=$id";
-					$where = "($where) AND catalog.type='category'";
-					$query .= "(SELECT '$set->_table' as dataset,catalog.product AS product,'$rtype' AS rtype,$set->_table.name AS alphaorder,0 AS sortorder,$cols FROM $catalogtable AS catalog LEFT JOIN $set->_table ON catalog.parent=$set->_table.id AND catalog.type='category' WHERE $where)";
-					break;
-				case "tags":
-					foreach ($ids as $id) $where .= ((!empty($where))?" OR ":"")."catalog.product=$id";
-					$where = "($where) AND catalog.type='tag'";
-					$query .= "(SELECT '$set->_table' as dataset,catalog.product AS product,'$rtype' AS rtype,$set->_table.name AS alphaorder,0 AS sortorder,$cols FROM $catalogtable AS catalog LEFT JOIN $set->_table ON catalog.parent=$set->_table.id AND type='tag' WHERE $where)";
-					break;
+		foreach ( $terms as $term ) { // Map WP taxonomy data to object meta
+			if ( ! isset($term->term_id) || empty($term->term_id) ) continue; 		// Skip invalid entries
+			if ( ! isset($term->object_id) || empty($term->object_id) ) continue;	// Skip invalid entries
+			if ( isset(Product::$_taxonomies[$term->taxonomy]) ) {
+				$property = Product::$_taxonomies[$term->taxonomy];
+			} else {
+				$property = $term->taxonomy.'s';
 			}
-		}
 
-		// Add order by columns
-		$query .= " ORDER BY sortorder";
-		// die($query);
-
-		// Execute the query
-		$data = $db->query($query,AS_ARRAY);
-
-		// Process the results into specific product object data in a product set
-
-		foreach ($data as $row) {
-			if (is_array($products) && isset($products[$row->product]))
-				$target = $products[$row->product];
+			if ( isset($products[$term->object_id]) )
+				$target = $products[$term->object_id];
 			else $target = $this;
 
-			$record = new stdClass(); $i = 0; $name = "";
-			foreach ($Dataset[$row->rtype]->_datatypes AS $key => $datatype) {
-				$column = 'c'.$i++;
-				$record->{$key} = '';
-				if ($key == "name") $name = $row->{$column};
-				if (!empty($row->{$column})) {
-					if (preg_match("/^[sibNaO](?:\:.+?\{.*\}$|\:.+;$|;$)/",$row->{$column}))
-						$row->{$column} = unserialize($row->{$column});
-					$record->{$key} = $row->{$column};
-				}
-			}
+			if ( ! isset($target->$property) ) $target->$property = array();
 
-			if ($row->rtype == "images") {
-				$image = new ProductImage();
-				$image->copydata($record,false,array());
-				$image->expopulate();
-				$name = $image->filename;
-				$record = $image;
-
-				// Reset the product's loaded images if the image was already
-				// loaded from another context (like Category::load_products())
-				if (isset($target->{$row->rtype}[0]) && $target->{$row->rtype}[0]->id == $image->id)
-					$target->{$row->rtype} = array();
+			if ( in_array( $term->taxonomy, array_keys($ShoppTaxonomies) ) ) { // Shopp ProductTaxonomy class type
+				$target->{$property}[ $term->term_id ] = new $ShoppTaxonomies[$term->taxonomy];
+				$target->{$property}[ $term->term_id ]->populate($term);
+				continue;
 			}
+			$target->{$property}[ $term->term_id ] = $term;
 
-			$target->{$row->rtype}[] = $record;
-			if (!empty($name)) {
-				if (isset($target->{$row->rtype.'key'}[$name]))
-					$target->{$row->rtype.'key'}[$name] = array($target->{$row->rtype.'key'}[$name],$record);
-				else $target->{$row->rtype.'key'}[$name] = $record;
-			}
+		} // END foreach ($terms)
+	}
+
+	/**
+	 * Callback for loading products from a record set
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @param array $records A reference to the loaded record set
+	 * @param object $record Result record data object
+	 * @return void
+	 **/
+	function loader (&$records,&$record,$DatabaseObject=false,$index='id',$collate=false) {
+
+		if (isset($this)) {
+			$index = $this->_key;
+			$DatabaseObject = get_class($this);
+		} else $DatabaseObject = __CLASS__;
+		$index = isset($record->$index)?$record->$index:'!NO_INDEX!';
+		if (!isset($DatabaseObject) || !class_exists($DatabaseObject)) return;
+		$Object = new $DatabaseObject();
+		$Object->populate($record);
+
+		// Added for inventory management support
+		if (isset($record->stockid)) {
+			$Object->stockid = $record->stockid;
+			if (isset($record->stocked)) $Object->stocked = $record->stocked;
+			if (isset($record->sku)) $Object->sku = $record->sku;
+			$index = $record->stockid; // Rewrite index to index on price record id
 		}
 
-		if (is_array($products)) {
-			foreach ($products as $product) if (!empty($product->prices)) $product->pricing();
-		} else {
-			if (!empty($this->prices)) $this->pricing($options);
+		$resum = false;
+		if (isset($record->summed)) { // Loaded from the collection loader
+			$Object->sumloader($records,$record);
+
+			$update = DB::mktime(ProductSummary::$_updates);
+			if (DB::mktime($record->summed) == $update) $resum = true; // Forced resum
+
+		} else $resum = true;
+
+		if ($resum) {
+			// Keep track products that need resum build run
+			if (!isset($this->resum)) $this->resum = array();
+			$this->resum[$index] = $Object;
 		}
 
-	} // end load_data()
+		if ($collate) {
+			if (!isset($records[$index])) $records[$index] = array();
+			$records[$index][] = $Object;
+		} else $records[$index] = $Object;
+	}
+
+	/**
+	 * Callback for processing meta records into the appropriate product properties
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function metaloader (&$records,&$record,$id='id',$property=false,$collate=true,$merge=false) {
+
+		if (isset($this->products) && !empty($this->products)) $products = &$this->products;
+		else $products = array();
+
+		$metamap = array(
+			'image' => 'images',
+			'setting' => 'settings',
+			'spec' => 'specs'
+		);
+
+		$metaclass = array(
+			'image' => 'ProductImage',
+			'spec' => 'Spec',
+			'meta' => 'MetaObject'
+		);
+
+		if ($property == 'metatype')
+			$property = isset($metamap[$record->type])?$metamap[$record->type]:'meta';
+
+		if (isset($metaclass[$record->type])) {
+			$ObjectClass = $metaclass[$record->type];
+			$Object = new $ObjectClass();
+			$Object->populate($record);
+			if (method_exists($Object,'expopulate'))
+				$Object->expopulate();
+
+			$target = false;
+			if (is_array($products) && isset($products[$Object->{$id}]))
+				$target = $products[$Object->{$id}];
+			elseif (isset($this))
+				$target = $this;
+
+			if (!empty($Object->name) && $target)
+				$target->{$Object->name} =& $Object->value;
+
+			$record = $Object;
+
+		}
+
+		if ('images' == $property) {
+			// Prevent double-loading images (can occur when images are specifically loaded, then all meta is generically loaded)
+			if (isset($target->$property) && isset($target->{$property}[$record->id])) return;
+			$collate = 'id';
+		}
+
+		if ('specs' == $property) {
+			$property = 'specnames';
+			parent::metaloader($records,$record,$products,$id,$property,$collate,$merge);
+
+			$property = 'specs';
+			$collate = 'id';
+		}
+
+		parent::metaloader($records,$record,$products,$id,$property,$collate,$merge);
+	}
+
+	/**
+	 * Populates the product with summary data
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function sumloader (&$records,&$data) {
+
+		$Summary = new ProductSummary();
+		$properties = array_keys($Summary->_datatypes);
+		$ignore = array('product','modified');
+
+		foreach ($properties as $property) {
+			if ($property{0} == '_') continue;
+			if (in_array($property,$ignore)) continue;
+
+			switch ($property) {
+				case 'ranges':
+					$ranges = explode(',',$data->{$property});
+					$minmax = array('min','max'); $i = 0;
+					foreach ($minmax as $m) {
+						$range = &$this->$m;
+						foreach (ProductSummary::$_ranges as $prop) {
+							if (isset($ranges[$i])) $range[$prop] = (float)$ranges[$i++];
+						}
+					}
+					break;
+				case 'taxed':
+					$taxed = explode(',',$data->{$property});
+					foreach ($taxed as $pricetag) {
+						if ( ! $pricetag ) continue;
+						list($m,$name) = explode(' ',$pricetag);
+
+						if (empty($m)) continue;
+						$range = &$this->$m;
+						$range[$name.'_tax'] = true;
+					}
+				default: $this->{$property} = isset($data->{$property})?($data->{$property}):false;
+			}
+			if ( isset($this->$property) ) {
+				if ('float' == $Summary->_datatypes[$property]) $this->checksum .= (float)$this->$property;
+				else $this->checksum .= $this->$property;
+			}
+		}
+		$this->checksum = md5($this->checksum);
+
+		if (isset($data->summed)) $this->summed = DB::mktime($data->summed);
+		if (shopp_setting_enabled('inventory') && str_true($this->inventory) && $this->stock <= 0) $this->outofstock = true;
+	}
 
 	/**
 	 * Aggregates product pricing information
@@ -255,117 +504,118 @@ class Product extends DatabaseObject {
 	 * @param array $options shopp() tag option list
 	 * @return void
 	 **/
-	function pricing ($options = false) {
+	function pricing (&$records,&$price,$restat=false) {
+
+		if ( isset($this->products) && !empty($this->products) ) {
+			if ( !isset($this->products[$price->product]) ) return false;
+
+			if (!isset($this->_last_product)) $this->_last_product = false;
+
+			if ( $this->_last_product != false
+					&& $this->_last_product != $price->product
+					&& isset($this->products[$this->_last_product]) ) {
+				$this->products[$this->_last_product]->sumup();
+			}
+
+			if ($this->_last_product != $price->product)
+				$this->products[$price->product]->resum();
+
+			$target = &$this->products[$price->product];
+
+			$this->_last_product = $price->product;
+		} else $target = &$this;
+
+		// Skip calulating variant pricing when variants are not enabled for the product
+		if (!( isset($target->variants) && str_true($target->variants) ) && 'variation' == $price->context) return;
+
+		$target->prices[] = $price;
+
+		// Force to floats
+		$price->price = (float)$price->price;
+		$price->saleprice = (float)$price->saleprice;
+		$price->shipfee = (float)$price->shipfee;
+		$price->promoprice = (float)str_true($price->sale)?$price->saleprice:$price->price;
+
+		// Build secondary lookup table using the price id as the key
+		$target->priceid[$price->id] = $price;
+
+		// Set promoprice before data aggregation
+		if (str_true($price->sale)) $price->promoprice = $price->saleprice;
+
+		// Do not count disabled price lines or addon price lines in aggregate summary stats
+		if ('N/A' == $price->type || 'addon' ==  $price->context) return;
+
+		// Simple product or variant product is on sale
+		if (str_true($price->sale)) $target->sale = $price->sale;
+
+		// Build third lookup table using the combined optionkey
+		$target->pricekey[$price->optionkey] = $price;
+
+		if (str_true($price->inventory)) {
+			$target->stock += $price->stock;
+			$target->inventory = $price->inventory;
+			$target->lowstock($price->stock,$price->stocked);
+		}
+
+		$freeshipping = false;
+		if (!str_true($price->shipping)) $freeshipping = true;
+
+		// Calculate catalog discounts if not already calculated
+		if (!empty($price->discounts)) {
+			$discount = Promotion::pricing($price->promoprice,$price->discounts);
+			if ($discount->freeship) $freeshipping = true;
+			$price->promoprice = $discount->pricetag;
+		}
+
+		if ($price->promoprice < $price->price) $target->sale = 'on';
+
+		// Grab price and saleprice ranges (minimum - maximum)
+		if (!$price->price) $price->price = 0;
 
 		// Variation range index/properties
 		$varranges = array('price' => 'price','saleprice'=>'promoprice');
+		if (str_true($price->inventory)) $varranges['stock'] = 'stock';
 
-		$variations = ($this->variations == "on");
-		$freeshipping = true;
-		$this->inventory = false;
-		foreach ($this->prices as $i => &$price) {
-			$price->price = (float)$price->price;
-			$price->saleprice = (float)$price->saleprice;
-			$price->shipfee = (float)$price->shipfee;
-			$price->promoprice = 0;
+		foreach ($varranges as $name => $prop) {
+			if (!isset($price->$prop)) continue;
 
-			// Build secondary lookup table using the price id as the key
-			$this->priceid[$price->id] = $price;
+			if (!isset($target->min[$name]) || $target->min[$name] == 0) $target->min[$name] = $price->$prop;
+			else $target->min[$name] = min($target->min[$name],$price->$prop);
+			if ($target->min[$name] == $price->$prop) $target->min[$name.'_tax'] = ($price->tax == "on");
 
-			if (defined('WP_ADMIN') && !isset($options['taxes'])) $options['taxes'] = true;
-			if (defined('WP_ADMIN') && value_is_true($options['taxes']) && $price->tax == "on") {
-				$Settings =& ShoppSettings();
-				$base = $Settings->get('base_operations');
-				if ($base['vat']) {
-					$Taxes = new CartTax();
-					$taxrate = $Taxes->rate($this);
-					$price->price += $price->price*$taxrate;
-					$price->saleprice += $price->saleprice*$taxrate;
-				}
+			if (!isset($target->max[$name])) $target->max[$name] = $price->$prop;
+			else $target->max[$name] = max($target->max[$name],$price->$prop);
+			if ($target->max[$name] == $price->$prop) $target->max[$name.'_tax'] = ($price->tax == "on");
+		}
+
+		// Determine savings ranges
+		if (str_true($price->sale)) {
+
+			if ( ! isset($target->min['saved']) || $target->min['saved'] === false ) {
+				$target->min['saved'] = $price->price;
+				$target->min['savings'] = 100;
+				$target->max['saved'] = $target->max['savings'] = 0;
 			}
 
-			if ($price->type == "N/A" || $price->context == "addon" || ($i > 0 && !$variations)) continue;
+			$target->min['saved'] = min($target->min['saved'],($price->price-$price->promoprice));
+			$target->max['saved'] = max($target->max['saved'],($price->price-$price->promoprice));
 
-			// Build third lookup table using the combined optionkey
-			$this->pricekey[$price->optionkey] = $price;
-
-			// Boolean flag for custom product sales
-			$price->onsale = false;
-			if ($price->sale == "on" && $price->type != "N/A")
-				$this->onsale = $price->onsale = true;
-
-			$price->stocked = false;
-			if ($price->inventory == "on" && $price->type != "N/A") {
-				$this->stock += $price->stock;
-				$this->inventory = $price->stocked = true;
+			// Find lowest savings percentage
+			$delta = $price->price - $price->promoprice;
+			if ( $price->price == 0 ) { // no savings possible
+				$target->min['savings'] = 0;
+			} else if ( $delta <= 0 ) { // total savings
+				$target->max['savings'] = 100;
+			} else {
+				$savings = ( $delta / $price->price ) * 100;
+				$target->min['savings'] = min($target->min['savings'], $savings);
+				$target->max['savings'] = max($target->max['savings'], $savings);
 			}
+		}
 
-			if ($price->freeshipping == '0' || $price->shipping == 'on')
-				$freeshipping = false;
+		if ( shopp_setting_enabled('inventory') && str_true($target->inventory) ) $target->outofstock = ($target->stock <= 0);
+		if ( $freeshipping ) $target->freeship = 'on';
 
-			if ($price->onsale) $price->promoprice = (float)$price->saleprice;
-			else $price->promoprice = (float)$price->price;
-
-			if ((isset($price->promos) && $price->promos == 'enabled')) {
-				if ($price->percentoff > 0) {
-					$price->promoprice = $price->promoprice - ($price->promoprice * ($price->percentoff/100));
-					$this->onsale = $price->onsale = true;
-				}
-				if ($price->amountoff > 0) {
-					$price->promoprice = $price->promoprice - $price->amountoff;
-					$this->onsale = $price->onsale = true;;
-				}
-			}
-
-			// Grab price and saleprice ranges (minimum - maximum)
-			if ($price->type != "N/A") {
-				if (!$price->price) $price->price = 0;
-				if ($price->stocked) $varranges['stock'] = 'stock';
-
-				foreach ($varranges as $name => $prop) {
-					if (!isset($price->$prop)) continue;
-
-					if (!isset($this->min[$name])) $this->min[$name] = $price->$prop;
-					else $this->min[$name] = min($this->min[$name],$price->$prop);
-					if ($this->min[$name] == $price->$prop) $this->min[$name.'_tax'] = ($price->tax == "on");
-
-
-					if (!isset($this->max[$name])) $this->max[$name] = $price->$prop;
-					else $this->max[$name] = max($this->max[$name],$price->$prop);
-					if ($this->max[$name] == $price->$prop) $this->max[$name.'_tax'] = ($price->tax == "on");
-				}
-			}
-
-			// Determine savings ranges
-			if ($price->onsale && isset($this->min['price']) && isset($this->min['saleprice'])) {
-
-				if (!isset($this->min['saved'])) {
-					$this->min['saved'] = $price->price;
-					$this->min['savings'] = 100;
-					$this->max['saved'] = $this->max['savings'] = 0;
-				}
-
-				$this->min['saved'] = min($this->min['saved'],($price->price-$price->promoprice));
-				$this->max['saved'] = max($this->max['saved'],($price->price-$price->promoprice));
-
-				// Find lowest savings percentage
-				if ($this->min['saved'] == ($price->price-$price->promoprice))
-					$this->min['savings'] = (1 - $price->promoprice/($price->price == 0?1:$price->price))*100;
-				if ($this->max['saved'] == ($price->price-$price->promoprice))
-					$this->max['savings'] = (1 - $price->promoprice/($price->price == 0?1:$price->price))*100;
-			}
-
-			// Determine weight ranges
-			if($price->weight && $price->weight > 0) {
-				if(!isset($this->min['weight'])) $this->min['weight'] = $this->max['weight'] = $price->weight;
-				$this->min['weight'] = min($this->min['weight'],$price->weight);
-				$this->max['weight'] = max($this->max['weight'],$price->weight);
-			}
-
-		} // end foreach($price)
-
-		if ($this->inventory && $this->stock <= 0) $this->outofstock = true;
-		if ($freeshipping) $this->freeshipping = true;
 	}
 
 	/**
@@ -377,137 +627,181 @@ class Product extends DatabaseObject {
 	 * @return boolean
 	 **/
 	function published () {
-		return ($this->status == "publish" && time() >= $this->publish);
+		return ('publish' == $this->status && current_time('timestamp') >= $this->publish);
 	}
 
 	/**
 	 * Returns the number of this product sold
 	 *
 	 * @author Jonathan Davis
-	 * @since 1.1
+	 * @since 1.2
 	 *
 	 * @return int
 	 **/
-	function sold () {
-		$db =& DB::get();
-		$purchased = DatabaseObject::tablename(Purchased::$table);
-		$r = $db->query("SELECT count(id) AS sold FROM $purchased WHERE product=$this->id LIMIT 1");
-		return $r->sold;
+	function sold (&$records,&$data) {
+
+		if (isset($this->products) && !empty($this->products)) $products = &$this->products;
+		else $products = array();
+
+		$target = false;
+		if (is_array($products) && isset($products[ $data->id ]))
+			$target = $products[ $data->id ];
+		elseif (isset($this))
+			$target = $this;
+
+		$target->sold = $data->sold;
+		$target->grossed = $data->grossed;
+
 	}
 
 	/**
-	 * Merges specs with identical names into an array of values
+	 * Calculates aggregate product stats from posted price data
 	 *
 	 * @author Jonathan Davis
-	 * @since 1.1
+	 * @since 1.2
+	 *
+	 * @param object $Price The price record to calculate against
+	 * @return void
+	 **/
+	function sumprice ($Price) {
+		if ($Price->type == 'N/A' || $Price->context == 'addon') return;
+
+		if ($this->maxprice === false) $this->maxprice = (float)$Price->promoprice;
+		else $this->maxprice = max($this->maxprice,$Price->promoprice);
+
+		if ($this->minprice === false) $this->minprice = (float)$Price->promoprice;
+		else $this->minprice = min($this->minprice,$Price->promoprice);
+
+		if (str_true($Price->sale)) $this->sale = $Price->sale;
+
+		if (str_true($Price->inventory)) {
+			$this->inventory = $Price->inventory;
+			$this->stock += $Price->stock;
+			$this->lowstock($Price->stock,$Price->stocked);
+		} elseif (!$this->inventory) $this->inventory = 'off';
+
+	}
+
+	/**
+	 * Resets summary data to intial values so summation is accurate
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
 	 *
 	 * @return void
 	 **/
-	function merge_specs () {
-		$merged = array();
-		foreach ($this->specs as $key => $spec) {
-			if (!isset($merged[$spec->name])) $merged[$spec->name] = $spec;
-			else {
-				if (!is_array($merged[$spec->name]->value))
-					$merged[$spec->name]->value = array($merged[$spec->name]->value);
-				$merged[$spec->name]->value[] = $spec->value;
-			}
+	function resum () {
+		$this->lowstock = 'none';
+		$this->sale = $this->inventory = 'off';
+		$this->stock = $this->stocked = $this->sold = 0;
+		$this->maxprice = $this->minprice = false;
+		$this->min = $this->max = array();
+		$this->freeship = 'off';
+		foreach ( ProductSummary::$_ranges as $index ) {
+			$this->min[$index] = false;
+			$this->max[$index] = false;
 		}
-		$this->specs = $merged;
 	}
 
 	/**
-	 * Saves product category assignments to the catalog
+	 * Saves generated stats to the product record
 	 *
 	 * @author Jonathan Davis
-	 * @since 1.1
+	 * @since 1.2
 	 *
-	 * @param array $updates Updated list of category ids the product is assigned to
+	 * @param array $stats The stat properties to update
 	 * @return void
 	 **/
-	function save_categories ($updates) {
-		$db = DB::get();
+	function sumup () {
+		if (empty($this->id)) return;
 
-		if (empty($updates)) $updates = array();
+		$Summary = new ProductSummary();
+		$properties = array_keys($Summary->_datatypes);
+		$minmax = array('min','max');
+		$ignore = array('product','modified');
 
-		$current = array();
-		foreach ($this->categories as $category) $current[] = $category->id;
+		$checksum = false;
+		foreach ($properties as $property) {
+			if ($property{0} == '_') continue;
+			if (in_array($property,$ignore)) continue;
+			switch ($property) {
+				case 'minprice': $this->minprice = (float)$this->min[ str_true($this->sale)?'saleprice':'price' ]; break;
+				case 'maxprice': $this->maxprice = (float)$this->max[ str_true($this->sale)?'saleprice':'price' ]; break;
+				case 'ranges':
+					$ranges = array();
+					foreach ($minmax as $m) {
+						$attr = $this->$m;
+						foreach (ProductSummary::$_ranges as $name)
+							if (isset($attr[$name])) $ranges[] = (float)$attr[$name];
+					}
+					break;
+				case 'taxed':
+					$taxable = array('price','saleprice');
+					$taxed = array();
+					foreach ($minmax as $m) {
+						$attr = $this->$m;
+						foreach ($taxable as $name)
+							if (isset($attr[$name.'_tax']) && $attr[$name.'_tax']) $taxed[] = "$m $name";
+					}
+					break;
+				default:
 
-		$added = array_diff($updates,$current);
-		$removed = array_diff($current,$updates);
+			}
 
-		$table = DatabaseObject::tablename(Catalog::$table);
-
-		if (!empty($added)) {
-			foreach ($added as $id) {
-				if (empty($id)) continue;
-				$db->query("INSERT $table SET parent='$id',type='category',product='$this->id',created=now(),modified=now()");
+			if ( isset($this->$property) ) {
+				if ('float' == $Summary->_datatypes[$property]) $checksum .= (float)$this->$property;
+				else $checksum .= $this->$property;
 			}
 		}
 
-		if (!empty($removed)) {
-			foreach ($removed as $id) {
-				if (empty($id)) continue;
-				$db->query("DELETE LOW_PRIORITY FROM $table WHERE parent='$id' AND type='category' AND product='$this->id'");
-			}
+		if (md5($checksum) == $this->checksum) return;
 
-		}
-
-	}
-
-	function save_tags ($updates) {
-		$db = DB::get();
-
-		if (empty($updates)) $updates = array();
-		$updates = stripslashes_deep($updates);
-
-		$current = array();
-		foreach ($this->tags as $tag) $current[] = $tag->name;
-
-		$added = array_diff($updates,$current);
-		$removed = array_diff($current,$updates);
-
-		if (!empty($added)) {
-			$catalog = DatabaseObject::tablename(Catalog::$table);
-			$tagtable = DatabaseObject::tablename(Tag::$table);
-			$where = "";
-			foreach ($added as $tag) $where .= ($where == ""?"":" OR ")."name='".$db->escape($tag)."'";
-			$results = $db->query("SELECT id,name FROM $tagtable WHERE $where",AS_ARRAY);
-			$exists = array();
-			foreach ($results as $tag) $exists[$tag->id] = $tag->name;
-
-			foreach ($added as $tag) {
-				if (empty($tag)) continue; // No empty tags
-				$tagid = array_search($tag,$exists);
-
-				if (!$tagid) {
-					$Tag = new Tag();
-					$Tag->name = $tag;
-					$Tag->save();
-					$tagid = $Tag->id;
-				}
-
-				if (!empty($tagid))
-					$db->query("INSERT $catalog SET parent='$tagid',type='tag',product='$this->id',created=now(),modified=now()");
-
-			}
-		}
-
-		if (!empty($removed)) {
-			$catalog = DatabaseObject::tablename(Catalog::$table);
-			foreach ($removed as $tag) {
-				// Ensure loading tag records by case-sensitive name with BINARY casting
-				$Tag = new Tag($tag,'BINARY name');
-				if (!empty($Tag->id))
-					$db->query("DELETE LOW_PRIORITY FROM $catalog WHERE parent='$Tag->id' AND type='tag' AND product='$this->id'");
-			}
-		}
-
+		$Summary->copydata($this);
+		if (isset($this->summed))
+			$Summary->modified = $this->summed;
+		$Summary->product = $this->id;
+		$Summary->ranges = join(',',$ranges);
+		$Summary->taxed = join(',',$taxed);
+		$Summary->save();
 	}
 
 	/**
-	 * optionkey
-	 * There is no Zul only XOR! */
+	 * Determines the aggregate lowstock level of the product for each price record
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void Description...
+	 **/
+	function lowstock ($stock,$stocked) {
+		$lowstock_level = shopp_setting('lowstock_level');
+		if ( false === $lowstock_level ) $lowstock_level = 5;
+		$setting = ( shopp_setting('lowstock_level')/100 );
+
+		$levels = array('none','warning','critical','backorder');
+		$max = array_search($this->lowstock,$levels);
+		$factors = array(0,1,3);
+
+		$x = count($factors);
+		foreach ($factors as $factor) {
+			if ($stock < min(1,$setting*$factor) * $stocked ) break;
+			$x--;
+		}
+
+		$this->lowstock = $levels[max($max,$x)];
+	}
+
+	/**
+	 * Magic option key generator
+	 *
+	 * There is no Zul only XOR!
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @param array option ids
+	 * @return int option key
+	 **/
 	function optionkey ($ids=array(),$deprecated=false) {
 		if ($deprecated) $factor = 101;
 		else $factor = 7001;
@@ -518,45 +812,128 @@ class Product extends DatabaseObject {
 		return $key;
 	}
 
+	function optionmap ( $variant = array(), $menus = array(), $type = 'variant', $return = 'all' ) {
+		if ( empty($variant) || empty($menus) ) return;
+
+		$selection = array();
+		$mapping = array();
+		$count = 1;
+
+		// get saved product options
+		$poptions = array();
+		$pkey = 'addon' == $type ? 'a' : 'v';
+		if ( isset($this->options[$pkey]) ) $poptions = $this->options[$pkey];
+
+		foreach ( $menus as $menuname => $options ) {
+
+			// get saved product menu
+			$pmenu = array();
+			foreach ( $poptions as $pmenu ) if ( $pmenu['name'] == $menuname ) break;
+
+			$mapping[$menuname] = array();
+			foreach ( $options as $option ) {
+
+				// get save option id
+				$poption = array();
+				if ( isset($pmenu['options']) ) foreach ( $pmenu['options'] as $poption )
+					if ( $poption['name'] == $option ) break;
+
+				$id = isset($poption['id']) ? $poption['id'] : $count++;
+				$mapping[$menuname][$option] = $id;
+			}
+		}
+		if ( 'addon' == $type) {
+			$type = key($variant);
+			$option = current($variant);
+
+			$selection[] = $mapping[$type][$option];
+			if ( 'optionkey' == $return ) return $this->optionkey($selection);
+			return array( $this->optionkey($selection), $selection[0], $option, $mapping );
+		}
+
+		foreach ( array_keys($variant) as $menuname ) {
+			$selection[] = $mapping[ $menuname ][ $variant[ $menuname ] ];
+		}
+
+		if ( 'optionkey' == $return ) return $this->optionkey($selection);
+
+		return array($this->optionkey($selection), implode(',', $selection), implode(', ', $variant), $mapping);
+	}
+
 	/**
-	 * save_imageorder()
-	 * Updates the sortorder of image assets (source, featured and thumbnails)
-	 * based on the provided array of image ids */
+	 * Updates the custom arrangement order of image assets
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @param array image ids
+	 * @return void
+	 **/
 	function save_imageorder ($ordering) {
-		$db = DB::get();
 		$table = DatabaseObject::tablename(ProductImage::$table);
 		foreach ($ordering as $i => $id)
-			$db->query("UPDATE LOW_PRIORITY $table SET sortorder='$i' WHERE (id='$id' AND parent='$this->id' AND context='product' AND type='image')");
-		return true;
+			DB::query("UPDATE LOW_PRIORITY $table SET sortorder='$i' WHERE (id='$id' AND parent='$this->id' AND context='product' AND type='image')");
 	}
 
 	/**
-	 * link_images()
-	 * Updates the product id of the images to link to the product
-	 * when the product being saved is new (has no previous id assigned) */
+	 * Translates image order settings to an appropriate SQL order by clause
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return string
+	 **/
+	function image_order () {
+		$orderings = array('ASC','DESC','RAND');
+		$ordering = shopp_setting('product_image_order');
+		if (!in_array($ordering,$orderings)) $ordering = '';
+
+		$columns = array('sortorder','created');
+		$column = shopp_setting('product_image_orderby');
+		if (!in_array($column,$columns)) $column = reset($columns);
+
+		$sortorder = trim("$column $ordering");
+		if ('RAND' == $ordering) $sortorder = 'RAND()';
+
+		return $sortorder;
+	}
+
+	/**
+	 * Links a set of image records to the product
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @param array image record ids
+	 * @return void
+	 **/
 	function link_images ($images) {
-		if (empty($images)) return false;
-		$db = DB::get();
+		if (empty($images)) return;
 		$table = DatabaseObject::tablename(ProductImage::$table);
-		$set = "id=".join(' OR id=',$images);
-		$query = "UPDATE $table SET parent='$this->id',context='product' WHERE ".$set;
-		$db->query($query);
-		return true;
+		DB::query("UPDATE $table SET parent='$this->id',context='product' WHERE id IN (".join(',',$images).")");
 	}
 
 	/**
-	 * update_images()
-	 * Updates the image details for all cached images */
+	 * Updates image details for all cached images of the product
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 *
+	 * @param array image record ids
+ 	 * @return void
+	 **/
 	function update_images ($images) {
-		if (!is_array($images)) return false;
+		if (!is_array($images)) return;
 
 		foreach ($images as $img) {
+
 			$Image = new ProductImage($img['id']);
-			$Image->title = $img['title'];
-			$Image->alt = $img['alt'];
+			$Image->title = stripslashes($img['title']);
+			$Image->alt = stripslashes($img['alt']);
 
 			if (!empty($img['cropping'])) {
-				require_once(SHOPP_PATH."/core/model/Image.php");
+				if (!class_exists('ImageProcessor'))
+					require(SHOPP_MODEL_PATH."/Image.php");
 
 				foreach ($img['cropping'] as $id => $cropping) {
 					if (empty($cropping)) continue;
@@ -582,7 +959,6 @@ class Product extends DatabaseObject {
 					$Cropped->size = strlen($Cropped->data);
 					if ($Cropped->store( $Cropped->data ) === false)
 						return false;
-
 					$Cropped->save();
 
 				}
@@ -591,7 +967,6 @@ class Product extends DatabaseObject {
 			$Image->save();
 		}
 
-		return true;
 	}
 
 
@@ -613,57 +988,82 @@ class Product extends DatabaseObject {
 	}
 
 	/**
-	 * Deletes the record associated with this object */
+	 * Deletes all the associated records of the product
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 * @version 1.2
+	 *
+	 * @return void
+	 **/
 	function delete () {
-		$db = DB::get();
-		$id = $this->{$this->_key};
+		$id = $this->id;
 		if (empty($id)) return false;
 
-		// Delete from categories
-		$table = DatabaseObject::tablename(Catalog::$table);
-		$db->query("DELETE LOW_PRIORITY FROM $table WHERE product='$id'");
+		// Delete assignment to taxonomies (categories, tags, custom taxonomies)
+		global $wpdb;
+		$table = $wpdb->term_relationships;
+		DB::query("DELETE LOW_PRIORITY FROM $table WHERE object_id='$id'");
 
 		// Delete prices
 		$table = DatabaseObject::tablename(Price::$table);
-		$db->query("DELETE LOW_PRIORITY FROM $table WHERE product='$id'");
+		DB::query("DELETE LOW_PRIORITY FROM $table WHERE product='$id'");
 
 		// Delete images/files
 		$table = DatabaseObject::tablename(ProductImage::$table);
 
 		// Delete images
 		$images = array();
-		$src = $db->query("SELECT id FROM $table WHERE parent='$id' AND context='product' AND type='image'",AS_ARRAY);
+		$src = DB::query("SELECT id FROM $table WHERE parent='$id' AND context='product' AND type='image'",AS_ARRAY);
 		foreach ($src as $img) $images[] = $img->id;
 		$this->delete_images($images);
 
 		// Delete product meta (specs, images, downloads)
 		$table = DatabaseObject::tablename(MetaObject::$table);
-		$db->query("DELETE LOW_PRIORITY FROM $table WHERE parent='$id' AND context='product'");
+		DB::query("DELETE LOW_PRIORITY FROM $table WHERE parent='$id' AND context='product'");
+
+		// Delete product summary
+		$table = DatabaseObject::tablename(ProductSummary::$table);
+		DB::query("DELETE FROM $table WHERE product='$id'");
 
 		// Delete record
-		$db->query("DELETE FROM $this->_table WHERE $this->_key='$id'");
+		DB::query("DELETE FROM $this->_table WHERE ID='$id'");
+
+		do_action_ref_array('shopp_product_deleted',array($this));
 
 	}
 
-	function duplicate () {
-		$db =& DB::get();
+	/**
+	 * Moves the product to the trash
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function trash () {
+		$id = $this->{$this->_key};
+		DB::query("UPDATE $this->_table SET post_status='trash' WHERE ID='$id'");
+	}
 
-		$this->load_data(array('prices','specs','categories','tags','images','taxes'=>'false'));
+	/**
+	 * Creates a duplicate product of this product's data
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.0
+	 * @version 1.2
+	 *
+	 * @return void
+	 **/
+	function duplicate () {
+
+		$original = $this->id;
+
+		$this->load_data(); // Load everything
 		$this->id = '';
 		$this->name = $this->name.' '.__('copy','Shopp');
-		$this->slug = sanitize_title_with_dashes($this->name);
-
-		// Check for an existing product slug
-		$existing = $db->query("SELECT slug FROM $this->_table WHERE slug='$this->slug' LIMIT 1");
-		if ($existing) {
-			$suffix = 2;
-			while($existing) {
-				$altslug = substr($this->slug, 0, 200-(strlen($suffix)+1)). "-$suffix";
-				$existing = $db->query("SELECT slug FROM $this->_table WHERE slug='$altslug' LIMIT 1");
-				$suffix++;
-			}
-			$this->slug = $altslug;
-		}
+		$slug = sanitize_title_with_dashes($this->name);
+		$this->slug = wp_unique_post_slug($slug, $this->id, $this->status, Product::posttype(), 0);
 		$this->created = '';
 		$this->modified = '';
 
@@ -671,979 +1071,154 @@ class Product extends DatabaseObject {
 
 		// Copy prices
 		foreach ($this->prices as $price) {
+
 			$Price = new Price();
-			$Price->updates($price,array('id','product','created','modified'));
+			$Price->copydata($price);
 			$Price->product = $this->id;
 			$Price->save();
+
+			// Copy Price record meta entries
+			$meta = array('donation','recurring','membership','dimensions');
+			$priceline['settings'] = array();
+			$settings = array();
+			foreach ($meta as $name)
+				if ( isset($price->$name) ) $settings[$name] = $price->$name;
+
+			shopp_set_meta($Price->id,'price','settings',$settings);
+			shopp_set_meta($Price->id,'price','options',$price->options);
+
 		}
 
-		// Copy sepcs
-		foreach ($this->specs as $spec) {
-			$Spec = new Spec();
-			$Spec->updates($spec,array('id','parent','created','modified'));
-			$Spec->parent = $this->id;
-			$Spec->save();
+		// Copy taxonomy assignments
+		$terms = array();
+		$taxonomies = get_object_taxonomies( self::$posttype );
+		$assignments = wp_get_object_terms($original,$taxonomies,array('fields' => 'all_with_object_id'));
+		foreach ( $assignments as $term ) { // Map WP taxonomy data to object meta
+			if ( ! isset($term->term_id) || empty($term->term_id) ) continue; 		// Skip invalid entries
+			if ( ! isset($term->taxonomy) || empty($term->taxonomy) ) continue; 	// Skip invalid entries
+
+			if (!isset($terms[$term->taxonomy])) $terms[$term->taxonomy] = array();
+			$terms[$term->taxonomy][] = (int)$term->term_id;
+		}
+		foreach ($terms as $taxonomy => $termlist)
+			wp_set_object_terms( $this->id, $termlist, $taxonomy );
+
+		$metadata = array('specs','images','settings','meta');
+		foreach ($metadata as $metaset) {
+			foreach ($this->$metaset as $meta) {
+				$ObjectClass = get_class($meta);
+				$Meta = new $ObjectClass();
+				$Meta->copydata($meta);
+				$Meta->parent = $this->id;
+				$Meta->save();
+			}
 		}
 
-		// Copy categories
-		$categories = array();
-		foreach ($this->categories as $category) $categories[] = $category->id;
-		$this->categories = array();
-		$this->save_categories($categories);
-
-		// Copy tags
-		$taglist = array();
-		foreach ($this->tags as $tag) $taglist[] = $tag->name;
-		$this->tags = array();
-		$this->save_tags($taglist);
-
-		// Copy product images
-		foreach ($this->images as $ProductImage) {
-			$Image = new ProductImage();
-			$Image->updates($ProductImage,array('id','parent','created','modified'));
-			$Image->parent = $this->id;
-			$Image->save();
-		}
-
+		// Re-summarize product pricing
+		$this->load_data(array('prices','summary'));
 	}
 
+	/**
+	 * Matches the product against tax conditional rules
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @param array Conditional rule to match against
+	 * @return boolean Match or no match
+	 **/
 	function taxrule ($rule) {
 		switch ($rule['p']) {
 			case "product-name": return ($rule['v'] == $this->name); break;
 			case "product-tags":
-				if (!isset($this->tagskey)) return false;
-				else return (in_array($rule['v'],array_keys($this->tagskey)));
+				if (empty($this->tags)) $this->load_data(array('tags'));
+				foreach ($this->tags as $tag) if ($rule['v'] == $tag->name) return true;
 				break;
 			case "product-category":
-				if (!isset($this->categorieskey)) return false;
-				else return (in_array($rule['v'],array_keys($this->categorieskey))); break;
+				if (empty($this->categories)) $this->load_data(array('categories'));
+				foreach ($this->categories as $category) if ($rule['v'] == $category->name) return true;
 		}
 		return false;
 	}
 
-	function tag ($property,$options=array()) {
-		global $Shopp;
-
-		$select_attrs = array('title','required','class','disabled','required','size','tabindex','accesskey');
-		$submit_attrs = array('title','class','value','disabled','tabindex','accesskey');
-
-		switch ($property) {
-			case "link":
-			case "url":
-				return shoppurl(SHOPP_PRETTYURLS?$this->slug:array('shopp_pid'=>$this->id));
-				break;
-			case "found":
-				if (empty($this->id)) return false;
-				$load = array('prices','images','specs','tags','categories');
-				if (isset($options['load'])) $load = explode(",",$options['load']);
-				$this->load_data($load);
-				return true;
-				break;
-			case "relevance": return (string)$this->score; break;
-			case "id": return $this->id; break;
-			case "name": return apply_filters('shopp_product_name',$this->name); break;
-			case "slug": return $this->slug; break;
-			case "summary": return apply_filters('shopp_product_summary',$this->summary); break;
-			case "description":
-				return apply_filters('shopp_product_description',$this->description);
-			case "isfeatured":
-			case "is-featured":
-				return ($this->featured == "on"); break;
-			case "price":
-			case "saleprice":
-				if (empty($this->prices)) $this->load_data(array('prices'));
-				$defaults = array(
-					'taxes' => null,
-					'starting' => ''
-				);
-				$options = array_merge($defaults,$options);
-				extract($options);
-
-				if (!is_null($taxes)) $taxes = value_is_true($taxes);
-
-				$min = $this->min[$property];
-				$mintax = $this->min[$property.'_tax'];
-
-				$max = $this->max[$property];
-				$maxtax = $this->max[$property.'_tax'];
-
-				$taxrate = shopp_taxrate($taxes,$this->prices[0]->tax,$this);
-
-				if ("saleprice" == $property) $pricetag = $this->prices[0]->promoprice;
-				else $pricetag = $this->prices[0]->price;
-
-				if (count($this->options) > 0) {
-					$taxrate = shopp_taxrate($taxes,true,$this);
-					$mintax = $mintax?$min*$taxrate:0;
-					$maxtax = $maxtax?$max*$taxrate:0;
-
-					if ($min == $max) return money($min+$mintax);
-					else {
-						if (!empty($starting)) return "$starting ".money($min+$mintax);
-						return money($min+$mintax)." &mdash; ".money($max+$maxtax);
-					}
-				} else return money($pricetag+($pricetag*$taxrate));
-
-				break;
-			case "taxrate":
-				return shopp_taxrate(null,true,$this);
-				break;
-			case "weight":
-				if(empty($this->prices)) $this->load_data(array('prices'));
-				$defaults = array(
-					'unit' => $Shopp->Settings->get('weight_unit'),
-					'min' => $this->min['weight'],
-					'max' => $this->max['weight'],
-					'units' => true,
-					'convert' => false
-				);
-				$options = array_merge($defaults,$options);
-				extract($options);
-
-				if(!isset($this->min['weight'])) return false;
-
-				if ($convert !== false) {
-					$min = convert_unit($min,$convert);
-					$max = convert_unit($max,$convert);
-					if (is_null($units)) $units = true;
-					$unit = $convert;
-				}
-
-				$range = false;
-				if ($min != $max) {
-					$range = array($min,$max);
-					sort($range);
-				}
-
-				$string = ($min == $max)?round($min,3):round($range[0],3)." - ".round($range[1],3);
-				$string .= value_is_true($units) ? " $unit" : "";
-				return $string;
-				break;
-			case "onsale":
-				if (empty($this->prices)) $this->load_data(array('prices'));
-				if (empty($this->prices)) return false;
-				return $this->onsale;
-				break;
-			case "has-savings": return ($this->onsale && $this->min['saved'] > 0); break;
-			case "savings":
-				if (empty($this->prices)) $this->load_data(array('prices'));
-				if (!isset($options['taxes'])) $options['taxes'] = null;
-
-				$taxrate = shopp_taxrate($options['taxes']);
-				$range = false;
-
-				if (!isset($options['show'])) $options['show'] = '';
-				if ($options['show'] == "%" || $options['show'] == "percent") {
-					if ($this->options > 1) {
-						if (round($this->min['savings']) != round($this->max['savings'])) {
-							$range = array($this->min['savings'],$this->max['savings']);
-							sort($range);
-						}
-						if (!$range) return percentage($this->min['savings'],array('precision' => 0)); // No price range
-						else return percentage($range[0],array('precision' => 0))." &mdash; ".percentage($range[1],array('precision' => 0));
-					} else return percentage($this->max['savings'],array('precision' => 0));
-				} else {
-					if ($this->options > 1) {
-						if (round($this->min['saved']) != round($this->max['saved'])) {
-							$range = array($this->min['saved'],$this->max['saved']);
-							sort($range);
-						}
-						if (!$range) return money($this->min['saved']+($this->min['saved']*$taxrate)); // No price range
-						else return money($range[0]+($range[0]*$taxrate))." &mdash; ".money($range[1]+($range[1]*$taxrate));
-					} else return money($this->max['saved']+($this->max['saved']*$taxrate));
-				}
-				break;
-			case "freeshipping":
-				if (empty($this->prices)) $this->load_data(array('prices'));
-				return $this->freeshipping;
-			case "hasimages":
-			case "has-images":
-				if (empty($this->images)) $this->load_data(array('images'));
-				return (!empty($this->images));
-				break;
-			case "images":
-				if (!$this->images) return false;
-				if (!isset($this->_images_loop)) {
-					reset($this->images);
-					$this->_images_loop = true;
-				} else next($this->images);
-
-				if (current($this->images) !== false) return true;
-				else {
-					unset($this->_images_loop);
-					return false;
-				}
-				break;
-			case "coverimage":
-				// Force select the first loaded image
-				unset($options['id']);
-				$options['index'] = 0;
-			case "thumbnail": // deprecated
-			case "image":
-				if (empty($this->images)) $this->load_data(array('images'));
-				if (!(count($this->images) > 0)) return "";
-
-				// Compatibility defaults
-				$_size = 96;
-				$_width = $Shopp->Settings->get('gallery_thumbnail_width');
-				$_height = $Shopp->Settings->get('gallery_thumbnail_height');
-				if (!$_width) $_width = $_size;
-				if (!$_height) $_height = $_size;
-
-				$defaults = array(
-					'img' => false,
-					'id' => false,
-					'index' => false,
-					'class' => '',
-					'width' => false,
-					'height' => false,
-					'size' => false,
-					'fit' => false,
-					'sharpen' => false,
-					'quality' => false,
-					'bg' => false,
-					'alt' => '',
-					'title' => '',
-					'zoom' => '',
-					'zoomfx' => 'shopp-zoom',
-					'property' => false
-				);
-				$options = array_merge($defaults,$options);
-				extract($options);
-
-				// Select image by database id
-				if ($id !== false) {
-					for ($i = 0; $i < count($this->images); $i++) {
-						if ($img->id == $id) {
-							$img = $this->images[$i]; break;
-						}
-					}
-					if (!$img) return "";
-				}
-
-				// Select image by index position in the list
-				if ($index !== false && isset($this->images[$index]))
-					$img = $this->images[$index];
-
-				// Use the current image pointer by default
-				if (!$img) $img = current($this->images);
-
-				if ($size !== false) $width = $height = $size;
-				if (!$width) $width = $_width;
-				if (!$height) $height = $_height;
-
-				$scale = $fit?array_search($fit,$img->_scaling):false;
-				$sharpen = $sharpen?min($sharpen,$img->_sharpen):false;
-				$quality = $quality?min($quality,$img->_quality):false;
-				$fill = $bg?hexdec(ltrim($bg,'#')):false;
-
-				list($width_a,$height_a) = array_values($img->scaled($width,$height,$scale));
-				if ($size == "original") {
-					$width_a = $img->width;
-					$height_a = $img->height;
-				}
-				if ($width_a === false) $width_a = $width;
-				if ($height_a === false) $height_a = $height;
-
-				$alt = esc_attr(empty($alt)?(empty($img->alt)?$img->name:$img->alt):$alt);
-				$title = empty($title)?$img->title:$title;
-				$titleattr = empty($title)?'':' title="'.esc_attr($title).'"';
-				$classes = empty($class)?'':' class="'.esc_attr($class).'"';
-
-				$src = shoppurl($img->id,'images');
-				if (SHOPP_PERMALINKS) $src = trailingslashit($src).$img->filename;
-
-				if ($size != "original")
-					$src = add_query_string($img->resizing($width,$height,$scale,$sharpen,$quality,$fill),$src);
-
-				switch (strtolower($property)) {
-					case "id": return $img->id; break;
-					case "url":
-					case "src": return $src; break;
-					case "title": return $title; break;
-					case "alt": return $alt; break;
-					case "width": return $width_a; break;
-					case "height": return $height_a; break;
-					case "class": return $class; break;
-				}
-
-				$imgtag = '<img src="'.$src.'"'.$titleattr.' alt="'.$alt.'" width="'.$width_a.'" height="'.$height_a.'" '.$classes.' />';
-
-				if (value_is_true($zoom))
-					return '<a href="'.shoppurl($img->id,'images').'/'.$img->filename.'" class="'.$zoomfx.'" rel="product-'.$this->id.'">'.$imgtag.'</a>';
-
-				return $imgtag;
-				break;
-			case "gallery":
-				if (empty($this->images)) $this->load_data(array('images'));
-				if (empty($this->images)) return false;
-				$styles = '';
-				$_size = 240;
-				$_width = $Shopp->Settings->get('gallery_small_width');
-				$_height = $Shopp->Settings->get('gallery_small_height');
-
-				if (!$_width) $_width = $_size;
-				if (!$_height) $_height = $_size;
-
-				$defaults = array(
-
-					// Layout settings
-					'margins' => 20,
-					'rowthumbs' => false,
-					// 'thumbpos' => 'after',
-
-					// Preview image settings
-					'p.size' => false,
-					'p.width' => false,
-					'p.height' => false,
-					'p.fit' => false,
-					'p.sharpen' => false,
-					'p.quality' => false,
-					'p.bg' => false,
-					'p.link' => true,
-					'rel' => '',
-
-					// Thumbnail image settings
-					'thumbsize' => false,
-					'thumbwidth' => false,
-					'thumbheight' => false,
-					'thumbfit' => false,
-					'thumbsharpen' => false,
-					'thumbquality' => false,
-					'thumbbg' => false,
-
-					// Effects settings
-					'zoomfx' => 'shopp-zoom',
-					'preview' => 'click',
-					'colorbox' => '{}'
-
-
-				);
-				$optionset = array_merge($defaults,$options);
-
-				// Translate dot names
-				$options = array();
-				$keys = array_keys($optionset);
-				foreach ($keys as $key)
-					$options[str_replace('.','_',$key)] = $optionset[$key];
-				extract($options);
-
-				if ($p_size > 0)
-					$_width = $_height = $p_size;
-
-				$width = $p_width > 0?$p_width:$_width;
-				$height = $p_height > 0?$p_height:$_height;
-
-				$preview_width = $width;
-
-				$previews = '<ul class="previews">';
-				$firstPreview = true;
-
-				// Find the max dimensions to use for the preview spacing image
-				$maxwidth = $maxheight = 0;
-				foreach ($this->images as $img) {
-					$scale = $p_fit?false:array_search($p_fit,$img->_scaling);
-					$scaled = $img->scaled($width,$height,$scale);
-					$maxwidth = max($maxwidth,$scaled['width']);
-					$maxheight = max($maxheight,$scaled['height']);
-				}
-
-				if ($maxwidth == 0) $maxwidth = $width;
-				if ($maxheight == 0) $maxheight = $height;
-
-				$p_link = value_is_true($p_link);
-
-				foreach ($this->images as $img) {
-
-					$scale = $p_fit?array_search($p_fit,$img->_scaling):false;
-					$sharpen = $p_sharpen?min($p_sharpen,$img->_sharpen):false;
-					$quality = $p_quality?min($p_quality,$img->_quality):false;
-					$fill = $p_bg?hexdec(ltrim($p_bg,'#')):false;
-					$scaled = $img->scaled($width,$height,$scale);
-
-					if ($firstPreview) { // Adds "filler" image to reserve the dimensions in the DOM
-						$href = shoppurl(SHOPP_PERMALINKS?trailingslashit('000'):'000','images');
-						$previews .= '<li id="preview-fill"'.(($firstPreview)?' class="fill"':'').'>';
-						$previews .= '<img src="'.add_query_string("$maxwidth,$maxheight",$href).'" alt=" " width="'.$maxwidth.'" height="'.$maxheight.'" />';
-						$previews .= '</li>';
-					}
-					$title = !empty($img->title)?' title="'.esc_attr($img->title).'"':'';
-					$alt = esc_attr(!empty($img->alt)?$img->alt:$img->filename);
-
-					$previews .= '<li id="preview-'.$img->id.'"'.(($firstPreview)?' class="active"':'').'>';
-
-					$href = shoppurl(SHOPP_PERMALINKS?trailingslashit($img->id).$img->filename:$img->id,'images');
-					if ($p_link) $previews .= '<a href="'.$href.'" class="gallery product_'.$this->id.' '.$options['zoomfx'].'"'.(!empty($rel)?' rel="'.$rel.'"':'').'>';
-					// else $previews .= '<a name="preview-'.$img->id.'">'; // If links are turned off, leave the <a> so we don't break layout
-					$previews .= '<img src="'.add_query_string($img->resizing($width,$height,$scale,$sharpen,$quality,$fill),shoppurl($img->id,'images')).'"'.$title.' alt="'.$alt.'" width="'.$scaled['width'].'" height="'.$scaled['height'].'" />';
-					if ($p_link) $previews .= '</a>';
-					$previews .= '</li>';
-					$firstPreview = false;
-				}
-				$previews .= '</ul>';
-
-				$thumbs = "";
-				$twidth = $preview_width+$margins;
-
-				if (count($this->images) > 1) {
-					$default_size = 64;
-					$_thumbwidth = $Shopp->Settings->get('gallery_thumbnail_width');
-					$_thumbheight = $Shopp->Settings->get('gallery_thumbnail_height');
-					if (!$_thumbwidth) $_thumbwidth = $default_size;
-					if (!$_thumbheight) $_thumbheight = $default_size;
-
-					if ($thumbsize > 0) $thumbwidth = $thumbheight = $thumbsize;
-
-					$width = $thumbwidth > 0?$thumbwidth:$_thumbwidth;
-					$height = $thumbheight > 0?$thumbheight:$_thumbheight;
-
-					$firstThumb = true;
-					$thumbs = '<ul class="thumbnails">';
-					foreach ($this->images as $img) {
-						$scale = $thumbfit?array_search($thumbfit,$img->_scaling):false;
-						$sharpen = $thumbsharpen?min($thumbsharpen,$img->_sharpen):false;
-						$quality = $thumbquality?min($thumbquality,$img->_quality):false;
-						$fill = $thumbbg?hexdec(ltrim($thumbbg,'#')):false;
-						$scaled = $img->scaled($width,$height,$scale);
-
-						$title = !empty($img->title)?' title="'.esc_attr($img->title).'"':'';
-						$alt = esc_attr(!empty($img->alt)?$img->alt:$img->name);
-
-						$thumbs .= '<li id="thumbnail-'.$img->id.'" class="preview-'.$img->id.(($firstThumb)?' first':'').'">';
-						$thumbs .= '<img src="'.add_query_string($img->resizing($width,$height,$scale,$sharpen,$quality,$fill),shoppurl($img->id,'images')).'"'.$title.' alt="'.$alt.'" width="'.$scaled['width'].'" height="'.$scaled['height'].'" />';
-						$thumbs .= '</li>'."\n";
-						$firstThumb = false;
-					}
-					$thumbs .= '</ul>';
-
-				}
-				if ($rowthumbs > 0) $twidth = ($width+$margins+2)*(int)$rowthumbs;
-
-				$result = '<div id="gallery-'.$this->id.'" class="gallery">'.$previews.$thumbs.'</div>';
-				$script = "\t".'ShoppGallery("#gallery-'.$this->id.'","'.$preview.'"'.($twidth?",$twidth":"").');';
-				add_storefrontjs($script);
-
-				return $result;
-
-				break;
-			case "has-categories":
-				if (empty($this->categories)) $this->load_data(array('categories'));
-				if (count($this->categories) > 0) return true; else return false; break;
-			case "categories":
-				if (!isset($this->_categories_loop)) {
-					reset($this->categories);
-					$this->_categories_loop = true;
-				} else next($this->categories);
-
-				if (current($this->categories) !== false) return true;
-				else {
-					unset($this->_categories_loop);
-					return false;
-				}
-				break;
-			case "in-category":
-				if (empty($this->categories)) $this->load_data(array('categories'));
-				if (isset($options['id'])) $field = "id";
-				if (isset($options['name'])) $field = "name";
-				if (isset($options['slug'])) $field = "slug";
-				foreach ($this->categories as $category)
-					if ($category->{$field} == $options[$field]) return true;
-				return false;
-			case "category":
-				$category = current($this->categories);
-				if (isset($options['show'])) {
-					if ($options['show'] == "id") return $category->id;
-					if ($options['show'] == "slug") return $category->slug;
-				}
-				return $category->name;
-				break;
-			case "hastags":
-			case "has-tags":
-				if (empty($this->tags)) $this->load_data(array('tags'));
-				if (count($this->tags) > 0) return true; else return false; break;
-			case "tags":
-				if (!isset($this->_tags_loop)) {
-					reset($this->tags);
-					$this->_tags_loop = true;
-				} else next($this->tags);
-
-				if (current($this->tags) !== false) return true;
-				else {
-					unset($this->_tags_loop);
-					return false;
-				}
-				break;
-			case "tagged":
-				if (empty($this->tags)) $this->load_data(array('tags'));
-				if (isset($options['id'])) $field = "id";
-				if (isset($options['name'])) $field = "name";
-				foreach ($this->tags as $tag)
-					if ($tag->{$field} == $options[$field]) return true;
-				return false;
-			case "tag":
-				$tag = current($this->tags);
-				if (isset($options['show'])) {
-					if ($options['show'] == "id") return $tag->id;
-				}
-				return $tag->name;
-				break;
-			case "hasspecs":
-			case "has-specs":
-				if (empty($this->specs)) $this->load_data(array('specs'));
-				if (count($this->specs) > 0) {
-					$this->merge_specs();
-					return true;
-				} else return false; break;
-			case "specs":
-				if (!isset($this->_specs_loop)) {
-					reset($this->specs);
-					$this->_specs_loop = true;
-				} else next($this->specs);
-
-				if (current($this->specs) !== false) return true;
-				else {
-					unset($this->_specs_loop);
-					return false;
-				}
-				break;
-			case "spec":
-				$string = "";
-				$separator = ": ";
-				$delimiter = ", ";
-				if (isset($options['separator'])) $separator = $options['separator'];
-				if (isset($options['delimiter'])) $separator = $options['delimiter'];
-
-				$spec = current($this->specs);
-				if (is_array($spec->value)) $spec->value = join($delimiter,$spec->value);
-
-				if (isset($options['name'])
-					&& !empty($options['name'])
-					&& isset($this->specskey[$options['name']])) {
-						$spec = $this->specskey[$options['name']];
-						if (is_array($spec)) {
-							if (isset($options['index'])) {
-								foreach ($spec as $index => $entry)
-									if ($index+1 == $options['index'])
-										$content = $entry->value;
-							} else {
-								foreach ($spec as $entry) $contents[] = $entry->value;
-								$content = join($delimiter,$contents);
-							}
-						} else $content = $spec->value;
-					$string = apply_filters('shopp_product_spec',$content);
-					return $string;
-				}
-
-				if (isset($options['name']) && isset($options['content']))
-					$string = "{$spec->name}{$separator}".apply_filters('shopp_product_spec',$spec->value);
-				elseif (isset($options['name'])) $string = $spec->name;
-				elseif (isset($options['content'])) $string = apply_filters('shopp_product_spec',$spec->value);
-				else $string = "{$spec->name}{$separator}".apply_filters('shopp_product_spec',$spec->value);
-				return $string;
-				break;
-			case "has-variations":
-				return ($this->variations == "on" && (!empty($this->options['v']) || !empty($this->options))); break;
-			case "variations":
-
-				$string = "";
-
-				if (!isset($options['mode'])) {
-					if (!isset($this->_prices_loop)) {
-						reset($this->prices);
-						$this->_prices_loop = true;
-					} else next($this->prices);
-					$price = current($this->prices);
-
-					if ($price && ($price->type == 'N/A' || $price->context != 'variation'))
-						next($this->prices);
-
-					if (current($this->prices) !== false) return true;
-					else {
-						unset($this->_prices_loop);
-						return false;
-					}
-					return true;
-				}
-
-				if ($this->outofstock) return false; // Completely out of stock, hide menus
-				if (!isset($options['taxes'])) $options['taxes'] = null;
-
-				$defaults = array(
-					'defaults' => '',
-					'disabled' => 'show',
-					'pricetags' => 'show',
-					'before_menu' => '',
-					'after_menu' => '',
-					'label' => 'on',
-					'required' => __('You must select the options for this item before you can add it to your shopping cart.','Shopp')
-					);
-				$options = array_merge($defaults,$options);
-
-				if ($options['mode'] == "single") {
-					if (!empty($options['before_menu'])) $string .= $options['before_menu']."\n";
-					if (value_is_true($options['label'])) $string .= '<label for="product-options'.$this->id.'">'. __('Options').': </label> '."\n";
-
-					$string .= '<select name="products['.$this->id.'][price]" id="product-options'.$this->id.'">';
-					if (!empty($options['defaults'])) $string .= '<option value="">'.$options['defaults'].'</option>'."\n";
-
-					foreach ($this->prices as $pricetag) {
-						if ($pricetag->context != "variation") continue;
-
-						if (!isset($options['taxes']))
-							$taxrate = shopp_taxrate(null,$pricetag->tax);
-						else $taxrate = shopp_taxrate(value_is_true($options['taxes']),$pricetag->tax);
-						$currently = ($pricetag->sale == "on")?$pricetag->promoprice:$pricetag->price;
-						$disabled = ($pricetag->inventory == "on" && $pricetag->stock == 0)?' disabled="disabled"':'';
-
-						$price = '  ('.money($currently).')';
-						if ($pricetag->type != "N/A")
-							$string .= '<option value="'.$pricetag->id.'"'.$disabled.'>'.$pricetag->label.$price.'</option>'."\n";
-					}
-					$string .= '</select>';
-					if (!empty($options['after_menu'])) $string .= $options['after_menu']."\n";
-
-				} else {
-					if (!isset($this->options)) return;
-
-					$menuoptions = $this->options;
-					if (!empty($this->options['v'])) $menuoptions = $this->options['v'];
-
-					$baseop = $Shopp->Settings->get('base_operations');
-					$precision = $baseop['currency']['format']['precision'];
-
-					if (!isset($options['taxes']))
-						$taxrate = shopp_taxrate(null,true,$this);
-					else $taxrate = shopp_taxrate(value_is_true($options['taxes']),true,$this);
-
-					$pricekeys = array();
-					foreach ($this->pricekey as $key => $pricing) {
-						$filter = array('');
-						$_ = new StdClass();
-						if ($pricing->type != "Donation")
-							$_->p = ((isset($pricing->onsale)
-										&& $pricing->onsale == "on")?
-											(float)$pricing->promoprice:
-											(float)$pricing->price);
-						$_->i = ($pricing->inventory == "on");
-						$_->s = ($pricing->inventory == "on")?$pricing->stock:false;
-						$_->tax = ($pricing->tax == "on");
-						$_->t = $pricing->type;
-						$pricekeys[$key] = $_;
-					}
-
-					ob_start();
-?><?php if (!empty($options['defaults'])): ?>
-	sjss.opdef = true;
-<?php endif; ?>
-<?php if (!empty($options['required'])): ?>
-	sjss.opreq = "<?php echo $options['required']; ?>";
-<?php endif; ?>
-	pricetags[<?php echo $this->id; ?>] = <?php echo json_encode($pricekeys); ?>;
-	new ProductOptionsMenus('select<?php if (!empty($Shopp->Category->slug)) echo ".category-".$Shopp->Category->slug; ?>.product<?php echo $this->id; ?>.options',{<?php if ($options['disabled'] == "hide") echo "disabled:false,"; ?><?php if ($options['pricetags'] == "hide") echo "pricetags:false,"; ?><?php if (!empty($taxrate)) echo "taxrate:$taxrate,"?>prices:pricetags[<?php echo $this->id; ?>]});
-<?php
-					$script = ob_get_contents();
-					ob_end_clean();
-
-					add_storefrontjs($script);
-
-					foreach ($menuoptions as $id => $menu) {
-						if (!empty($options['before_menu'])) $string .= $options['before_menu']."\n";
-						if (value_is_true($options['label'])) $string .= '<label for="options-'.$menu['id'].'">'.$menu['name'].'</label> '."\n";
-						$category_class = isset($Shopp->Category->slug)?'category-'.$Shopp->Category->slug:'';
-						$string .= '<select name="products['.$this->id.'][options][]" class="'.$category_class.' product'.$this->id.' options" id="options-'.$menu['id'].'">';
-						if (!empty($options['defaults'])) $string .= '<option value="">'.$options['defaults'].'</option>'."\n";
-						foreach ($menu['options'] as $key => $option)
-							$string .= '<option value="'.$option['id'].'">'.$option['name'].'</option>'."\n";
-
-						$string .= '</select>';
-					}
-					if (!empty($options['after_menu'])) $string .= $options['after_menu']."\n";
-				}
-
-				return $string;
-				break;
-			case "variation":
-				$variation = current($this->prices);
-
-				if (!isset($options['taxes'])) $options['taxes'] = null;
-				else $options['taxes'] = value_is_true($options['taxes']);
-				$taxrate = shopp_taxrate($options['taxes'],$variation->tax,$this);
-
-				$weightunit = (isset($options['units']) && !value_is_true($options['units']) ) ? false : $Shopp->Settings->get('weight_unit');
-
-				$string = '';
-				if (array_key_exists('id',$options)) $string .= $variation->id;
-				if (array_key_exists('label',$options)) $string .= $variation->label;
-				if (array_key_exists('type',$options)) $string .= $variation->type;
-				if (array_key_exists('sku',$options)) $string .= $variation->sku;
-				if (array_key_exists('price',$options)) $string .= money($variation->price+($variation->price*$taxrate));
-				if (array_key_exists('saleprice',$options)) {
-					if (isset($options['promos']) && !value_is_true($options['promos'])) {
-						$string .= money($variation->saleprice+($variation->saleprice*$taxrate));
-					} else $string .= money($variation->promoprice+($variation->promoprice*$taxrate));
-				}
-				if (array_key_exists('stock',$options)) $string .= $variation->stock;
-				if (array_key_exists('weight',$options)) $string .= round($variation->weight, 3) . ($weightunit ? " $weightunit" : false);
-				if (array_key_exists('shipfee',$options)) $string .= money(floatvalue($variation->shipfee));
-				if (array_key_exists('sale',$options)) return ($variation->sale == "on");
-				if (array_key_exists('shipping',$options)) return ($variation->shipping == "on");
-				if (array_key_exists('tax',$options)) return ($variation->tax == "on");
-				if (array_key_exists('inventory',$options)) return ($variation->inventory == "on");
-				return $string;
-				break;
-			case "has-addons":
-				return ($this->addons == "on" && !empty($this->options['a'])); break;
-				break;
-			case "addons":
-
-				$string = "";
-
-				if (!isset($options['mode'])) {
-					if (!$this->priceloop) {
-						reset($this->prices);
-						$this->priceloop = true;
-					} else next($this->prices);
-					$thisprice = current($this->prices);
-
-					if ($thisprice && $thisprice->type == "N/A")
-						next($this->prices);
-
-					if ($thisprice && $thisprice->context != "addon")
-						next($this->prices);
-
-					if (current($this->prices) !== false) return true;
-					else {
-						$this->priceloop = false;
-						return false;
-					}
-					return true;
-				}
-
-				if ($this->outofstock) return false; // Completely out of stock, hide menus
-				if (!isset($options['taxes'])) $options['taxes'] = null;
-
-				$defaults = array(
-					'defaults' => '',
-					'disabled' => 'show',
-					'before_menu' => '',
-					'after_menu' => ''
-					);
-
-				$options = array_merge($defaults,$options);
-
-				if (!isset($options['label'])) $options['label'] = "on";
-				if (!isset($options['required'])) $options['required'] = __('You must select the options for this item before you can add it to your shopping cart.','Shopp');
-				if ($options['mode'] == "single") {
-					if (!empty($options['before_menu'])) $string .= $options['before_menu']."\n";
-					if (value_is_true($options['label'])) $string .= '<label for="product-options'.$this->id.'">'. __('Options').': </label> '."\n";
-
-					$string .= '<select name="products['.$this->id.'][price]" id="product-options'.$this->id.'">';
-					if (!empty($options['defaults'])) $string .= '<option value="">'.$options['defaults'].'</option>'."\n";
-
-					foreach ($this->prices as $pricetag) {
-						if ($pricetag->context != "addon") continue;
-
-						if (isset($options['taxes']))
-							$taxrate = shopp_taxrate(value_is_true($options['taxes']),$pricetag->tax,$this);
-						else $taxrate = shopp_taxrate(null,$pricetag->tax,$this);
-						$currently = ($pricetag->sale == "on")?$pricetag->promoprice:$pricetag->price;
-						$disabled = ($pricetag->inventory == "on" && $pricetag->stock == 0)?' disabled="disabled"':'';
-
-						$price = '  ('.money($currently).')';
-						if ($pricetag->type != "N/A")
-							$string .= '<option value="'.$pricetag->id.'"'.$disabled.'>'.$pricetag->label.$price.'</option>'."\n";
-					}
-
-					$string .= '</select>';
-					if (!empty($options['after_menu'])) $string .= $options['after_menu']."\n";
-
-				} else {
-					if (!isset($this->options['a'])) return;
-
-					$taxrate = shopp_taxrate($options['taxes'],true,$this);
-
-					// Index addon prices by option
-					$pricing = array();
-					foreach ($this->prices as $pricetag) {
-						if ($pricetag->context != "addon") continue;
-						$pricing[$pricetag->options] = $pricetag;
-					}
-
-					foreach ($this->options['a'] as $id => $menu) {
-						if (!empty($options['before_menu'])) $string .= $options['before_menu']."\n";
-						if (value_is_true($options['label'])) $string .= '<label for="options-'.$menu['id'].'">'.$menu['name'].'</label> '."\n";
-						$category_class = isset($Shopp->Category->slug)?'category-'.$Shopp->Category->slug:'';
-						$string .= '<select name="products['.$this->id.'][addons][]" class="'.$category_class.' product'.$this->id.' addons" id="addons-'.$menu['id'].'">';
-						if (!empty($options['defaults'])) $string .= '<option value="">'.$options['defaults'].'</option>'."\n";
-						foreach ($menu['options'] as $key => $option) {
-
-							$pricetag = $pricing[$option['id']];
-
-							if (isset($options['taxes']))
-								$taxrate = shopp_taxrate(value_is_true($options['taxes']),$pricetag->tax,$this);
-							else $taxrate = shopp_taxrate(null,$pricetag->tax,$this);
-
-							$currently = ($pricetag->sale == "on")?$pricetag->promoprice:$pricetag->price;
-							if ($taxrate > 0) $currently = $currently+($currently*$taxrate);
-							$string .= '<option value="'.$option['id'].'">'.$option['name'].' (+'.money($currently).')</option>'."\n";
-						}
-
-						$string .= '</select>';
-					}
-					if (!empty($options['after_menu'])) $string .= $options['after_menu']."\n";
-
-				}
-
-				return $string;
-				break;
-
-			case "donation":
-			case "amount":
-			case "quantity":
-				if ($this->outofstock) return false;
-
-				$inputs = array('text','menu');
-				$defaults = array(
-					'value' => 1,
-					'input' => 'text', // accepts text,menu
-					'labelpos' => 'before',
-					'label' => '',
-					'options' => '1-15,20,25,30,40,50,75,100',
-					'size' => 3
-				);
-				$options = array_merge($defaults,$options);
-				$_options = $options;
-				extract($options);
-
-				unset($_options['label']); // Interferes with the text input value when passed to inputattrs()
-				$labeling = '<label for="quantity-'.$this->id.'">'.$label.'</label>';
-
-				if (!isset($this->_prices_loop)) reset($this->prices);
-				$variation = current($this->prices);
-				$_ = array();
-
-				if ("before" == $labelpos) $_[] = $labeling;
-				if ("menu" == $input) {
-					if ($this->inventory && $this->max['stock'] == 0) return "";
-
-					if (strpos($options,",") !== false) $options = explode(",",$options);
-					else $options = array($options);
-
-					$qtys = array();
-					foreach ((array)$options as $v) {
-						if (strpos($v,"-") !== false) {
-							$v = explode("-",$v);
-							if ($v[0] >= $v[1]) $qtys[] = $v[0];
-							else for ($i = $v[0]; $i < $v[1]+1; $i++) $qtys[] = $i;
-						} else $qtys[] = $v;
-					}
-					$_[] = '<select name="products['.$this->id.'][quantity]" id="quantity-'.$this->id.'">';
-					foreach ($qtys as $qty) {
-						$amount = $qty;
-						$selection = (isset($this->quantity))?$this->quantity:1;
-						if ($variation->type == "Donation" && $variation->donation['var'] == "on") {
-							if ($variation->donation['min'] == "on" && $amount < $variation->price) continue;
-							$amount = money($amount);
-							$selection = $variation->price;
-						} else {
-							if ($this->inventory && $amount > $this->max['stock']) continue;
-						}
-						$selected = ($qty==$selection)?' selected="selected"':'';
-						$_[] = '<option'.$selected.' value="'.$qty.'">'.$amount.'</option>';
-					}
-					$_[] = '</select>';
-				} elseif (valid_input($input)) {
-					if ($variation->type == "Donation" && $variation->donation['var'] == "on") {
-						if ($variation->donation['min']) $_options['value'] = $variation->price;
-						$_options['class'] .= " currency";
-					}
-					$_[] = '<input type="'.$input.'" name="products['.$this->id.'][quantity]" id="quantity-'.$this->id.'"'.inputattrs($_options).' />';
-				}
-
-				if ("after" == $labelpos) $_[] = $labeling;
-				return join("\n",$_);
-				break;
-			case "input":
-				if (!isset($options['type']) ||
-					($options['type'] != "menu" && $options['type'] != "textarea" && !valid_input($options['type']))) $options['type'] = "text";
-				if (!isset($options['name'])) return "";
-				if ($options['type'] == "menu") {
-					$result = '<select name="products['.$this->id.'][data]['.$options['name'].']" id="data-'.$options['name'].'-'.$this->id.'"'.inputattrs($options,$select_attrs).'>';
-					if (isset($options['options']))
-						$menuoptions = preg_split('/,(?=(?:[^\"]*\"[^\"]*\")*(?![^\"]*\"))/',$options['options']);
-					if (is_array($menuoptions)) {
-						foreach($menuoptions as $option) {
-							$selected = "";
-							$option = trim($option,'"');
-							if (isset($options['default']) && $options['default'] == $option)
-								$selected = ' selected="selected"';
-							$result .= '<option value="'.$option.'"'.$selected.'>'.$option.'</option>';
-						}
-					}
-					$result .= '</select>';
-				} elseif ($options['type'] == "textarea") {
-					if (isset($options['cols'])) $cols = ' cols="'.$options['cols'].'"';
-					if (isset($options['rows'])) $rows = ' rows="'.$options['rows'].'"';
-					$result .= '<textarea name="products['.$this->id.'][data]['.$options['name'].']" id="data-'.$options['name'].'-'.$this->id.'"'.$cols.$rows.inputattrs($options).'>'.$options['value'].'</textarea>';
-				} else {
-					$result = '<input type="'.$options['type'].'" name="products['.$this->id.'][data]['.$options['name'].']" id="data-'.$options['name'].'-'.$this->id.'"'.inputattrs($options).' />';
-				}
-
-				return $result;
-				break;
-			case "outofstock":
-				if ($this->outofstock) {
-					$label = isset($options['label'])?$options['label']:$Shopp->Settings->get('outofstock_text');
-					$string = '<span class="outofstock">'.$label.'</span>';
-					return $string;
-				} else return false;
-				break;
-			case "buynow":
-				if (!isset($options['value'])) $options['value'] = __("Buy Now","Shopp");
-			case "addtocart":
-
-				if (!isset($options['class'])) $options['class'] = "addtocart";
-				else $options['class'] .= " addtocart";
-				if (!isset($options['value'])) $options['value'] = __("Add to Cart","Shopp");
-				$string = "";
-
-				if ($this->outofstock) {
-					$string .= '<span class="outofstock">'.$Shopp->Settings->get('outofstock_text').'</span>';
-					return $string;
-				}
-				if (isset($options['redirect']) && !isset($options['ajax']))
-					$string .= '<input type="hidden" name="redirect" value="'.$options['redirect'].'" />';
-
-				$string .= '<input type="hidden" name="products['.$this->id.'][product]" value="'.$this->id.'" />';
-
-				if (!empty($this->prices[0]) && $this->prices[0]->type != "N/A")
-					$string .= '<input type="hidden" name="products['.$this->id.'][price]" value="'.$this->prices[0]->id.'" />';
-
-				if (!empty($Shopp->Category)) {
-					if (SHOPP_PRETTYURLS)
-						$string .= '<input type="hidden" name="products['.$this->id.'][category]" value="'.$Shopp->Category->uri.'" />';
-					else
-						$string .= '<input type="hidden" name="products['.$this->id.'][category]" value="'.((!empty($Shopp->Category->id))?$Shopp->Category->id:$Shopp->Category->slug).'" />';
-				}
-
-				$string .= '<input type="hidden" name="cart" value="add" />';
-				if (isset($options['ajax'])) {
-					if ($options['ajax'] == "html") $options['class'] .= ' ajax-html';
-					else $options['class'] .= " ajax";
-					$string .= '<input type="hidden" name="ajax" value="true" />';
-					$string .= '<input type="button" name="addtocart" '.inputattrs($options).' />';
-				} else {
-					$string .= '<input type="submit" name="addtocart" '.inputattrs($options).' />';
-				}
-
-				return $string;
+	/**
+	 * Sets the status of a set of products
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @param array $ids Set of product IDs to update
+	 * @param string $status The status to set: publish, draft, trash
+	 * @return boolean
+	 **/
+	static function publishset ($ids,$status) {
+		if (empty($ids) || !is_array($ids)) return false;
+		$settings = array('publish','draft','trash');
+		if (!in_array($status,$settings)) return false;
+		$table = WPShoppObject::tablename(self::$table);
+		DB::query("UPDATE $table SET post_status='$status' WHERE ID in (".join(',',$ids).")");
+		return true;
+	}
+
+	/**
+	 * Updates the featured setting of a set of products
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @param array $ids Set of product IDs to update
+	 * @param string $setting Either 'on' or 'off'
+	 * @return boolean
+	 **/
+	static function featureset ($ids,$setting) {
+		if (empty($ids) || !is_array($ids)) return false;
+		$settings = array('on','off');
+		if (!in_array($setting,$settings)) return false;
+		foreach ($ids as $id) {
+			$Product = new ProductSummary((int)$id);
+			$Product->featured = $setting;
+			$Product->save();
 		}
-
-
+		return true;
 	}
 
 } // END class Product
 
+// @todo Document ProductSummary class
+class ProductSummary extends DatabaseObject {
+	static $table = 'summary';
+	static $_ranges = array('price','saleprice','saved','savings','weight');
+	static $_updates = '0000-00-00 00:00:01';
+
+	function __construct ($id=false,$key='product') {
+		$this->init(self::$table);
+		$this->_key = 'product';
+		$this->load($id,$key);
+	}
+
+	function save () {
+		$data = DB::prepare($this,$this->_map);
+
+		$id = $this->{$this->_key};
+		if (!empty($this->_map)) {
+			$remap = array_flip($this->_map);
+			if (isset($remap[$this->_key]))
+				$id = $this->{$remap[$this->_key]};
+		}
+
+		// Insert new record
+		$data['modified'] = "'".current_time('mysql')."'";
+		$dataset = DatabaseObject::dataset($data);
+		$query = "INSERT $this->_table SET $dataset ON DUPLICATE KEY UPDATE $dataset";
+		$id = DB::query($query);
+		do_action_ref_array('shopp_save_productsummary', array(&$this));
+		return $id;
+
+	}
+
+} // END class ProductSummary
+
+// @todo Document Spec class
 class Spec extends MetaObject {
 
 	function __construct ($id=false) {

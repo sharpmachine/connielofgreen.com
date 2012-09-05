@@ -4,79 +4,120 @@
 	<div class="icon32"></div>
 	<h2><?php _e('Shipping Settings','Shopp'); ?></h2>
 
-	<form name="settings" id="shipping" action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>" method="post">
-		<?php wp_nonce_field('shopp-settings-shipping'); ?>
+	<?php $this->shipping_menu(); ?>
 
-		<?php include("navigation.php"); ?>
+	<form name="settings" id="shipping" action="<?php echo esc_url($this->url); ?>" method="post">
+		<?php wp_nonce_field('shopp-settings-shipping'); ?>
 
 		<table class="form-table">
 			<tr>
 				<th scope="row" valign="top"><label for="shipping-toggle"><?php _e('Calculate Shipping','Shopp'); ?></label></th>
-				<td><input type="hidden" name="settings[shipping]" value="off" /><input type="checkbox" name="settings[shipping]" value="on" id="shipping-toggle"<?php if ($this->Settings->get('shipping') == "on") echo ' checked="checked"'?> /><label for="shipping-toggle"> <?php _e('Enabled','Shopp'); ?></label><br />
-	            <?php _e('Check this to use shipping. Leave un-checked to disable shipping &mdash; helpful if you are only selling subscriptions or downloads.','Shopp'); ?></td>
+				<td><input type="hidden" name="settings[shipping]" value="off" /><input type="checkbox" name="settings[shipping]" value="on" id="shipping-toggle"<?php if (shopp_setting('shipping') == "on") echo ' checked="checked"'?> /><label for="shipping-toggle"> <?php _e('Enabled','Shopp'); ?></label><br />
+	            <?php _e('Enables shipping cost calculations. Disable if you are exclusively selling intangible products.','Shopp'); ?></td>
 			</tr>
 			<tr>
-				<th scope="row" valign="top"><label for="weight-unit"><?php _e('Weight Unit','Shopp'); ?></label></th>
+				<th scope="row" valign="top"><label for="shipping-toggle"><?php _e('Track Inventory','Shopp'); ?></label></th>
+				<td><input type="hidden" name="settings[inventory]" value="off" /><input type="checkbox" name="settings[inventory]" value="on" id="inventory-toggle"<?php if (shopp_setting('inventory') == "on") echo ' checked="checked"'?> /><label for="inventory-toggle"> <?php _e('Enabled','Shopp'); ?></label><br />
+	            <?php _e('Enables inventory tracking. Disable if you are exclusively selling intangible products or not keeping track of product stock.','Shopp'); ?></td>
+			</tr>
+			<tr>
+				<th scope="row" valign="top"><label><?php _e('Shipping Carriers','Shopp'); ?></label></th>
+				<td>
+				<div id="carriers" class="multiple-select">
+					<ul>
+						<li<?php $even = true;
+						$classes[] = 'odd hide-if-no-js'; if (!empty($classes)) echo ' class="'.join(' ',$classes).'"'; $even = !$even; ?>><input type="checkbox" name="selectall"  id="selectall" /><label for="selectall"><strong><?php _e('Select All','Shopp'); ?></strong></label></li>
+						<?php
+							foreach ($carriers as $code => $carrier):
+								$classes = array();
+								if ($even) $classes[] = 'odd';
+						?>
+							<li<?php if (!empty($classes)) echo ' class="'.join(' ',$classes).'"'; ?>><input type="checkbox" name="settings[shipping_carriers][]" value="<?php echo $code; ?>" id="carrier-<?php echo $code; ?>"<?php if (in_array($code,$shipping_carriers)) echo ' checked="checked"'; ?> /><label for="carrier-<?php echo $code; ?>" accesskey="<?php echo substr($code,0,1); ?>"><?php echo $carrier; ?></label></li>
+						<?php $even = !$even; endforeach; ?>
+					</ul>
+				</div><br />
+				<label><?php _e('Select the shipping carriers you will be using for shipment tracking.','Shopp'); ?></label>
+				</td>
+			</tr>
+			<?php global $Shopp; if ($Shopp->Shipping->realtime): ?>
+			<tr>
+				<th scope="row" valign="top"><label for="packaging"><?php _e('Packaging','Shopp'); ?></label></th>
+				<td>
+				<select name="settings[shipping_packaging]" id="packaging">
+						<?php echo menuoptions(Lookup::packaging_types(), shopp_setting('shipping_packaging'),true); ?>
+				</select><br />
+				<?php _e('Determines packaging method used for real-time shipping quotes.','Shopp'); ?></td>
+			</tr>
+			<tr>
+				<th scope="row" valign="top"><label for="packaging"><?php _e('Package Limit','Shopp'); ?></label></th>
+				<td>
+				<select name="settings[shipping_package_weight_limit]" id="packaging_weight_limit">
+						<?php echo menuoptions(apply_filters('shopp_package_weight_limits', array('-1'=>'∞',10,20,30,40,50,60,70,80,90,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800)),
+								shopp_setting('shipping_package_weight_limit'),true); ?>
+				</select><br />
+				<?php _e('The maximum weight allowed for a package.','Shopp'); ?></td>
+			</tr>
+			<?php endif; ?>
+			<tr>
+				<th scope="row" valign="top"><label for="weight-unit"><?php _e('Units','Shopp'); ?></label></th>
 				<td>
 				<select name="settings[weight_unit]" id="weight-unit">
-					<option value="">&nbsp;</option>
 						<?php
 							if ($base['units'] == "imperial") $units = array("oz" => __("ounces (oz)","Shopp"),"lb" => __("pounds (lbs)","Shopp"));
 							else $units = array("g"=>__("gram (g)","Shopp"),"kg"=>__("kilogram (kg)","Shopp"));
-							echo menuoptions($units,$this->Settings->get('weight_unit'),true);
+							echo menuoptions($units,shopp_setting('weight_unit'),true);
 						?>
-				</select><br />
-				<?php _e('Used as unit of weight for all products.','Shopp'); ?></td>
-			</tr>
-			<tr>
-				<th scope="row" valign="top"><label for="weight-unit"><?php _e('Dimension Unit','Shopp'); ?></label></th>
-				<td>
+				</select>
 				<select name="settings[dimension_unit]" id="dimension-unit">
-					<option value="">&nbsp;</option>
 						<?php
 							if ($base['units'] == "imperial") $units = array("in" => __("inches (in)","Shopp"),"ft" => __("feet (ft)","Shopp"));
 							else $units = array("cm"=>__("centimeters (cm)","Shopp"),"m"=>__("meters (m)","Shopp"));
-							echo menuoptions($units,$this->Settings->get('dimension_unit'),true);
+							echo menuoptions($units,shopp_setting('dimension_unit'),true);
 						?>
 				</select><br />
-				<?php _e('Used as the unit of dimensions for all products.','Shopp'); ?></td>
+				<?php _e('Standard weight &amp; dimension units used for all products.','Shopp'); ?></td>
+			</tr>
+			<tr>
+				<th scope="row" valign="top"><label for="order-processing-min"><?php _e('Order Processing','Shopp'); ?></label></th>
+				<td>
+				<select name="settings[order_processing_min]" id="order-processing">
+						<?php echo menuoptions(Lookup::timeframes_menu(),shopp_setting('order_processing_min'),true); ?>
+				</select> &mdash; <select name="settings[order_processing_max]" id="order-processing">
+							<?php echo menuoptions(Lookup::timeframes_menu(),shopp_setting('order_processing_max'),true); ?>
+				</select><br />
+				<?php _e('Set the estimated time range for processing orders for shipment.','Shopp'); ?></td>
+			</tr>
+			<tr>
+				<th scope="row" valign="top"><label for="lowstock-level"><?php _e('Low Inventory','Shopp'); ?></label></th>
+				<td>
+					<?php
+						$values = array_reverse(array_merge(range(0,25),range(30,50,5),range(60,100,10)));
+						$labels = $values;
+						array_walk($labels,create_function('&$val','$val = "$val%";'));
+						$levels = array_combine($values,$labels);
+					?>
+					<select name="settings[lowstock_level]" id="lowstock-level">
+					<?php echo menuoptions($levels,$lowstock,true); ?>
+					</select><br />
+	            	<?php _e('Select the level for low stock warnings.','Shopp'); ?>
+				</td>
 			</tr>
 			<tr>
 				<th scope="row" valign="top"><label for="order_handling_fee"><?php _e('Order Handling Fee','Shopp'); ?></label></th>
-				<td><input type="text" name="settings[order_shipfee]" value="<?php echo money($this->Settings->get('order_shipfee')); ?>" id="order_handling_fee" size="7" class="right selectall" /><br />
+				<td><input type="text" name="settings[order_shipfee]" value="<?php echo money(shopp_setting('order_shipfee')); ?>" id="order_handling_fee" size="7" class="right selectall money" /><br />
 	            <?php _e('Handling fee applied once to each order with shipped products.','Shopp'); ?></td>
 			</tr>
 			<tr>
 				<th scope="row" valign="top"><label for="free_shipping_text"><?php _e('Free Shipping Text','Shopp'); ?></label></th>
-				<td><input type="text" name="settings[free_shipping_text]" value="<?php echo esc_attr($this->Settings->get('free_shipping_text')); ?>" id="free_shipping_text" /><br />
+				<td><input type="text" name="settings[free_shipping_text]" value="<?php echo esc_attr(shopp_setting('free_shipping_text')); ?>" id="free_shipping_text" /><br />
 	            <?php _e('Text used to highlight no shipping costs (examples: Free shipping! or Shipping Included)','Shopp'); ?></td>
 			</tr>
 			<tr>
 				<th scope="row" valign="top"><label for="outofstock-text"><?php _e('Out-of-stock Notice','Shopp'); ?></label></th>
-				<td><input type="text" name="settings[outofstock_text]" value="<?php echo esc_attr($this->Settings->get('outofstock_text')); ?>" id="outofstock-text" /><br />
+				<td><input type="text" name="settings[outofstock_text]" value="<?php echo esc_attr(shopp_setting('outofstock_text')); ?>" id="outofstock-text" /><br />
 	            <?php _e('Text used to notify the customer the product is out-of-stock or on backorder.','Shopp'); ?></td>
 			</tr>
-			<tr>
-				<th scope="row" valign="top"><label for="lowstock-level"><?php _e('Low Inventory','Shopp'); ?></label></th>
-				<td><input type="text" name="settings[lowstock_level]" value="<?php echo esc_attr($lowstock); ?>" id="lowstock-level" size="5" /><br />
-	            <?php _e('Enter the number for low stock level warnings.','Shopp'); ?></td>
-			</tr>
-			<tr>
-				<th scope="row" valign="top"><label for="regional_rates"><?php _e('Domestic Regions','Shopp'); ?></label></th>
-				<td><input type="hidden" name="settings[shipping_regions]" value="off" /><input type="checkbox" name="settings[shipping_regions]" value="on" id="regional_rates"<?php echo ($this->Settings->get('shipping_regions') == "on")?' checked="checked"':''; ?> /><label for="regional_rates"> <?php _e('Enabled','Shopp'); ?></label><br />
-	            <?php _e('Used for domestic regional shipping rates (only applies to operations based in the U.S. &amp; Canada)','Shopp'); ?><br />
-				<strong><?php _e('Note:','Shopp'); ?></strong> <?php _e('You must click the "Save Changes" button for changes to take effect.','Shopp'); ?></td>
-			</tr>
 		</table>
-
-		<h3><?php _e('Shipping Methods &amp; Rates','Shopp'); ?></h3>
-		<p><small><?php _e('Shipping rates based on the order amount are calculated once against the order subtotal (which does not include tax).  Shipping rates based on weight are calculated once against the total order weight.  Shipping rates based on item quantity are calculated against the total quantity of each different item ordered.','Shopp'); ?></small></p>
-		<?php $base = $this->Settings->get('base_operations'); if (!empty($base['country'])): ?>
-		<table id="shipping-rates" class="form-table"><tr><td></td></tr></table>
-		<div class="tablenav"><div class="alignright actions"><button type="button" name="add-shippingrate" id="add-shippingrate" class="button-secondary" tabindex="9999"><?php _e('Add Shipping Method Rates','Shopp'); ?></button></div></div>
-		<?php else: ?>
-			<p class="tablenav"><small><strong>Note:</strong> <?php _e('You must select a Base of Operations location under','Shopp'); ?> <a href="?page=<?php echo $this->Admin->settings['settings'][0] ?>"><?php _e('General settings','Shopp'); ?></a> <?php _e('before you can configure shipping rates.','Shopp'); ?></small></p>
-		<?php endif; ?>
 
 		<p class="submit"><input type="submit" class="button-primary" name="save" value="<?php _e('Save Changes','Shopp'); ?>" /></p>
 	</form>
@@ -84,161 +125,12 @@
 
 <script type="text/javascript">
 /* <![CDATA[ */
-var weight_units = '<?php echo $Shopp->Settings->get("weight_unit"); ?>',
-	uniqueMethods = new Array();
-
-jQuery(document).ready(function() {
-	var $ = jqnc();
-
-	$('#order_handling_fee').change(function() { this.value = asMoney(this.value); });
-
-	$('#weight-unit').change(function () {
-		weight_units = $(this).val();
-		$('#shipping-rates table.rate td.units span.weightunit').html(weight_units+' = ');
+jQuery(document).ready(function($) {
+	quickSelects();
+	$('#selectall').change(function () {
+		if ($(this).attr('checked')) $('#carriers input').not(this).attr('checked',true);
+		else $('#carriers input').not(this).attr('checked',false);
 	});
-
-	function addShippingRate (r) {
-		if (!r) r = false;
-		var i = shippingRates.length;
-		var row = $('<tr></tr>').appendTo($('#shipping-rates'));
-		var heading = $('<th scope="row" valign="top"><label for="name['+i+']" id="label-'+i+'"><?php echo addslashes(__('Option Name','Shopp')); ?></label><input type="hidden" name="priormethod-'+i+'" id="priormethod-'+i+'" /></th>').appendTo(row);
-		$('<br />').appendTo(heading);
-		var name = $('<input type="text" name="settings[shipping_rates]['+i+'][name]" value="" id="name-'+i+'" size="16" tabindex="'+(i+1)+'00" class="selectall" />').appendTo(heading);
-		$('<br />').appendTo(heading);
-
-
-		var deliveryTimesMenu = $('<select name="settings[shipping_rates]['+i+'][delivery]" id="delivery-'+i+'" class="methods" tabindex="'+(i+1)+'01"></select>').appendTo(heading);
-		var lastGroup = false;
-		$.each(deliveryTimes,function(range,label){
-			if (range.indexOf("group")==0) {
-				lastGroup = $('<optgroup label="'+label+'"></optgroup>').appendTo(deliveryTimesMenu);
-			} else {
-				if (lastGroup) $('<option value="'+range+'">'+label+'</option>').appendTo(lastGroup);
-				else $('<option value="'+range+'">'+label+'</option>').appendTo(deliveryTimesMenu);
-			}
-		});
-
-		$('<br />').appendTo(heading);
-
-		var methodMenu = $('<select name="settings[shipping_rates]['+i+'][method]" id="method-'+i+'" class="methods" tabindex="'+(i+1)+'02"></select>').appendTo(heading);
-		var lastGroup = false;
-		$.each(methods,function(m,methodtype){
-			if (m.indexOf("group")==0) {
-				lastGroup = $('<optgroup label="'+methodtype+'"></optgroup>').appendTo(methodMenu);
-			} else {
-				var methodOption = $('<option value="'+m+'">'+methodtype+'</option>');
-				for (var disabled in uniqueMethods)
-					if (uniqueMethods[disabled] == m) methodOption.attr('disabled',true);
-				if (lastGroup) methodOption.appendTo(lastGroup);
-				else methodOption.appendTo(methodMenu);
-			}
-		});
-		var rateTableCell = $('<td/>').appendTo(row);
-		var deleteRateButton = $('<button type="button" name="deleteRate" class="delete deleteRate"></button>').appendTo(rateTableCell).hide();
-		$('<img src="<?php echo SHOPP_PLUGINURI; ?>/core/ui/icons/delete.png" width="16" height="16"  />').appendTo(deleteRateButton);
-
-
-		var rowBG = row.css("background-color");
-		var deletingBG = "#ffebe8";
-		row.hover(function () {
-				deleteRateButton.show();
-			}, function () {
-				deleteRateButton.hide();
-		});
-
-		deleteRateButton.hover (function () {
-				row.animate({backgroundColor:deletingBG},250);
-			},function() {
-				row.animate({backgroundColor:rowBG},250);
-		}).click(function () {
-			if (confirm("<?php echo addslashes(__('Are you sure you want to delete this shipping option?','Shopp')); ?>")) {
-				row.remove();
-				shippingRates.splice(i,1);
-			}
-		});
-
-		var rateTable = $('<table class="rate"/>').appendTo(rateTableCell);
-
-		$(methodMenu).change(function() {
-
-			var id = $(this).attr('id').split("-"),
-				methodid = id[1],
-				priormethod = $('#priormethod-'+methodid).val(),
-				uniqueMethodIndex = $.inArray(priormethod,uniqueMethods);
-
-			if (priormethod != "" && uniqueMethodIndex != -1)
-				uniqueMethods.splice(uniqueMethodIndex,1);
-
-			$('#label-'+methodid).show();
-			$('#name-'+methodid).show();
-			$('#delivery-'+methodid).show();
-			$('#shipping-rates select.methods').not($(methodMenu)).find('option').attr('disabled',false);
-			$(uniqueMethods).each(function (i,method) {
-				$('#shipping-rates select.methods').not($(methodMenu)).find('option[value='+method+']:not(:selected)').attr('disabled',true);
-			});
-
-			methodHandlers.call($(this).val(),i,rateTable,r);
-			methodName = $(this).val().split("::");
-			$(this).parent().attr('class',methodName[0].toLowerCase());
-			$('#priormethod-'+methodid).val($('#method-'+methodid).val());
-		});
-
-		if (r) {
-			name.val(r.name);
-			methodMenu.val(r.method).change();
-			deliveryTimesMenu.val(r.delivery);
-		} else {
-			methodMenu.change();
-		}
-
-		quickSelects();
-		shippingRates.push(row);
-
-	}
-
-	function uniqueMethod (methodid,option) {
-		$('#label-'+methodid).hide();
-		$('#name-'+methodid).hide();
-		$('#delivery-'+methodid).hide();
-
-		var methodMenu = $('#method-'+methodid),
-			methodOptions = methodMenu.children(),
-			optionid = methodMenu.get(0).selectedIndex;
-
-		if ($(methodOptions.get(optionid)).attr('disabled')) {
-			methodMenu.val(methodMenu.find('option:not(:disabled):first').val()).change();
-			return false;
-		}
-		$('#shipping-rates select.methods').not($(methodMenu)).find('option[value='+option+']').attr('disabled',true);
-
-		uniqueMethods.push(option);
-		return true;
-	}
-
-	var methodHandlers = new CallbackRegistry();
-
-	<?php do_action('shopp_settings_shipping_ui'); ?>
-
-	if ($('#shipping-rates')) {
-		var shippingRates = new Array(),
-			rates = <?php echo json_encode($rates); ?>,
-			methods = <?php echo json_encode($methods); ?>,
-			deliveryTimes = {"prompt":"<?php _e('Delivery time','Shopp'); ?>&hellip;","group1":"<?php _e('Business Days','Shopp'); ?>","1d-1d":"1 <?php _e('business day','Shopp'); ?>","1d-2d":"1-2 <?php _e('business days','Shopp'); ?>","1d-3d":"1-3 <?php _e('business days','Shopp'); ?>","1d-5d":"1-5 <?php _e('business days','Shopp'); ?>","2d-3d":"2-3 <?php _e('business days','Shopp'); ?>","2d-5d":"2-5 <?php _e('business days','Shopp'); ?>","2d-7d":"2-7 <?php _e('business days','Shopp'); ?>","3d-5d":"3-5 <?php _e('business days','Shopp'); ?>","group2":"<?php _e('Weeks','Shopp'); ?>","1w-2w":"1-2 <?php _e('weeks','Shopp'); ?>","2w-3w":"2-3 <?php _e('weeks','Shopp'); ?>"},
-			domesticAreas = <?php echo json_encode($areas); ?>,
-			region = '<?php echo $region; ?>';
-
-		$('#add-shippingrate').click(function() {
-			addShippingRate();
-		});
-
-		$('#shipping-rates').empty();
-		if (!rates) $('#add-shippingrate').click();
-		else {
-			$.each(rates,function(i,rate) {
-				addShippingRate(rate);
-			});
-		}
-	}
 
 });
 /* ]]> */

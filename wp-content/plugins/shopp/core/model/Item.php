@@ -13,6 +13,7 @@
  * @subpackage cart
  **/
 class Item {
+	var $api = 'cartitem';		// Theme API name
 	var $product = false;		// The source product ID
 	var $priceline = false;		// The source price ID
 	var $category = false;		// The breadcrumb category
@@ -21,20 +22,23 @@ class Item {
 	var $name = false;			// The name of the source product
 	var $description = false;	// Short description from the product summary
 	var $option = false;		// The option ID of the price object
-	var $variation = array();	// The selected variation
-	var $variations = array();	// The available variation options
+	var $variant = array();		// The selected variant
+	var $variants = array();	// The available variants
 	var $addons = array();		// The addons added to the item
 	var $image = false;			// The cover image for the product
 	var $data = array();		// Custom input data
+	var $processing = array();	// Per item order processing delays
 	var $quantity = 0;			// The selected quantity for the line item
 	var $addonsum = 0;			// The sum of selected addons
 	var $unitprice = 0;			// Per unit price
 	var $priced = 0;			// Per unit price after discounts are applied
 	var $totald = 0;			// Total price after discounts
+	var $subprice = 0;			// Regular price for subscription payments
 	var $unittax = 0;			// Per unit tax amount
 	var $pricedtax = 0;			// Per unit tax amount after discounts are applied
 	var $tax = 0;				// Sum of the per unit tax amount for the line item
 	var $taxrate = 0;			// Tax rate for the item
+	var $taxable = array();		// Per unit taxable amounts (baseprice & add-ons that are taxed)
 	var $total = 0;				// Total cost of the line item (unitprice x quantity)
 	var $discount = 0;			// Discount applied to each unit
 	var $discounts = 0;			// Sum of per unit discounts (discount for the line)
@@ -45,10 +49,13 @@ class Item {
 	var $shipfee = 0;			// Shipping fees for each unit of the line item
 	var $download = false;		// Download ID of the asset from the selected price object
 	var $shipping = false;		// Shipping setting of the selected price object
+	var $recurring = false;		// Recurring flag when the item requires recurring billing
 	var $shipped = false;		// Shipped flag when the item needs shipped
 	var $inventory = false;		// Inventory setting of the selected price object
-	var $taxable = false;		// Taxable setting of the selected price object
+	var $istaxed = false;		// Taxable setting of the selected price object
+	var $excludetax = false;	// Exclude tax in price renderings
 	var $freeshipping = false;	// Free shipping status of the selected price object
+	var $packaging = false;		// Should the item be packaged separately
 
 	/**
 	 * Constructs a line item from a Product object and identified price object
@@ -63,27 +70,60 @@ class Item {
 	 * @param array $addons (optional) A set of addon options
 	 * @return void
 	 **/
-	function __construct ($Product,$pricing,$category=false,$data=array(),$addons=array()) {
+	function __construct ( $Product, $pricing, $category = false, $data = array(), $addons = array() ) {
+		$args = func_get_args();
+		if ( empty($args) ) return;
 
-		$Product->load_data(array('prices','images','categories','tags','specs'));
+		$this->load($Product, $pricing, $category, $data, $addons);
+	}
 
-		// If product variations are enabled, disregard the first priceline
-		if ($Product->variations == "on") array_shift($Product->prices);
+	/**
+	 * load
+	 *
+	 * loads/constructs the Item object from parameters
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @param object $Product Product object
+	 * @param mixed $pricing A list of price IDs; The option key of a price object; or a Price object
+	 * @param int $category (optional)The breadcrumb category ID where the product was added from
+	 * @param array $data (optional) Custom data associated with the line item
+	 * @param array $addons (optional) A set of addon options
+	 * @return void
+	 **/
+	function load ( $Product, $pricing, $category = false, $data = array(), $addons = array() ) {
+		$Product->load_data();
 
 		// If option ids are passed, lookup by option key, otherwise by id
-		if (is_array($pricing)) {
-			$Price = $Product->pricekey[$Product->optionkey($pricing)];
-			if (empty($Price)) $Price = $Product->pricekey[$Product->optionkey($pricing,true)];
-		} elseif ($pricing !== false) {
+		if ( is_array($pricing) && ! empty($pricing) ) {
+			$optionkey = $Product->optionkey($pricing);
+			if ( ! isset($Product->pricekey[$optionkey]) ) $optionkey = $Product->optionkey($pricing, true); // deprecated prime
+			if ( isset($Product->pricekey[$optionkey]) ) $Price = $Product->pricekey[$optionkey];
+		} elseif ( $pricing ) {
 			$Price = $Product->priceid[$pricing];
-		} else {
-			foreach ($Product->prices as &$Price)
-				if ($Price->type != "N/A" &&
-					(!$Price->stocked ||
-					($Price->stocked && $Price->stock > 0))) break;
 		}
-		if (isset($Product->id)) $this->product = $Product->id;
-		if (isset($Price->id)) $this->priceline = $Price->id;
+
+		// Find single product priceline
+		if ( ! $Price && ! str_true($Product->variants) ) {
+			foreach ( $Product->prices as &$Price ) {
+				$stock = true;
+				if ( str_true($Price->inventory) && 1 > $Price->stock ) $stock = false;
+				if ( 'product' == $Price->context && 'N/A' != $Price->type && $stock ) break;
+			}
+		}
+
+		// Find first available variant priceline
+		if ( ! $Price && str_true($Product->variants) ) {
+			foreach ( $Product->prices as &$Price ) {
+				$stock = true;
+				if ( str_true($Price->inventory) && 1 > $Price->stock ) $stock = false;
+				if ( 'variation' == $Price->context && 'N/A' != $Price->type && $stock ) break;
+			}
+		}
+
+		if ( isset($Product->id) ) $this->product = $Product->id;
+		if ( isset($Price->id) ) $this->priceline = $Price->id;
 
 		$this->name = $Product->name;
 		$this->slug = $Product->slug;
@@ -94,10 +134,12 @@ class Item {
 		$this->image = current($Product->images);
 		$this->description = $Product->summary;
 
-		if ($Product->variations == "on")
-			$this->variations($Product->prices);
+		// Product has variants
+		if ( str_true($Product->variants) )
+			$this->variants($Product->prices);
 
-		if (isset($Product->addons) && $Product->addons == "on")
+		// Product has Addons
+		if (str_true($Product->addons))
 			$this->addons($this->addonsum,$addons,$Product->prices);
 
 		if (isset($Price->id))
@@ -105,53 +147,92 @@ class Item {
 
 		$this->sku = $Price->sku;
 		$this->type = $Price->type;
-		$this->sale = $Price->onsale;
-		$this->freeshipping = $Price->freeshipping;
-		// $this->saved = ($Price->price - $Price->promoprice);
-		// $this->savings = ($Price->price > 0)?percentage($this->saved/$Price->price)*100:0;
-		$this->unitprice = (($Price->onsale)?$Price->promoprice:$Price->price)+$this->addonsum;
-		if ($this->type == "Donation")
+		$this->sale = str_true($Product->sale);
+		$this->freeshipping = ( isset($Price->freeshipping) ? $Price->freeshipping : false );
+
+		$baseprice = ( $this->sale ? $Price->promoprice : $Price->price );
+		$this->unitprice = $baseprice + $this->addonsum;
+
+		if (shopp_setting_enabled('taxes')) {
+			if (str_true($Price->tax)) $this->taxable[] = $baseprice;
+			$this->istaxed = ( $this->taxable > 0 );
+			if (isset($Product->excludetax)) $this->excludetax = str_true($Product->excludetax);
+		}
+
+		if ( 'Donation' == $this->type )
 			$this->donation = $Price->donation;
+
+		$this->inventory = str_true($Price->inventory) && shopp_setting_enabled('inventory');
+
 		$this->data = stripslashes_deep(esc_attrs($data));
 
+		// Handle Recurrences
+		if ($this->has_recurring()) {
+			$this->subprice = $this->unitprice;
+			$this->recurrences();
+			if ( $this->is_recurring() && $this->has_trial() ) {
+				$trial = $this->trial();
+				$this->unitprice = $trial['price'];
+			}
+		}
+
 		// Map out the selected menu name and option
-		if ($Product->variations == "on") {
-			$selected = explode(",",$this->option->options); $s = 0;
-			$variants = isset($Product->options['v'])?$Product->options['v']:$Product->options;
-			foreach ($variants as $i => $menu) {
-				foreach($menu['options'] as $option) {
-					if ($option['id'] == $selected[$s]) {
-						$this->variation[$menu['name']] = $option['name']; break;
+		if ( str_true($Product->variants) ) {
+			$selected = explode(',',$this->option->options); $s = 0;
+			$variants = isset($Product->options['v']) ? $Product->options['v'] : $Product->options;
+			foreach ( (array)$variants as $i => $menu ) {
+				foreach( (array)$menu['options'] as $option ) {
+					if ( $option['id'] == $selected[$s] ) {
+						$this->variant[$menu['name']] = $option['name']; break;
 					}
 				}
 				$s++;
 			}
 		}
 
-		if (!empty($Price->download)) $this->download = $Price->download;
-		if ($Price->type == "Shipped") {
-			$this->shipped = true;
-			if ($Price->shipping == "on") {
-				$this->weight = $Price->weight;
-				if (isset($Price->dimensions) && array_sum((array)$Price->dimensions) > 0) {
-					foreach ((array)$Price->dimensions as $dimension => $value)
-						if (!empty($value)) $this->$dimension = $value;
-				}
+		$this->packaging = str_true( shopp_product_meta($Product->id, 'packaging') );
+
+		if ( ! empty($Price->download) ) $this->download = $Price->download;
+
+		if ( 'Shipped' == $Price->type ) $this->shipped = true;
+
+		if ( $this->shipped ) {
+			$dimensions = array(
+				'weight' => 0,
+				'length' => 0,
+				'width' => 0,
+				'height' => 0
+			);
+
+			if ( str_true($Price->shipping) ) {
 				$this->shipfee = $Price->shipfee;
-				if (isset($Product->addons) && $Product->addons == "on")
-					$this->addons($this->shipfee,$addons,$Product->prices,'shipfee');
+				if ( isset($Price->dimensions) )
+					$dimensions = array_merge($dimensions,$Price->dimensions);
 			} else $this->freeshipping = true;
+
+			if ( isset($Product->addons) && str_true($Product->addons) ) {
+				$this->addons($dimensions,$addons,$Product->prices,'dimensions');
+				$this->addons($this->shipfee,$addons,$Product->prices,'shipfee');
+			}
+
+			foreach ( $dimensions as $dimension => $value ) {
+				$this->$dimension = $value;
+			}
+			if (isset($Product->processing) && str_true($Product->processing)) {
+				if (isset($Product->minprocess)) $this->processing['min'] = $Product->minprocess;
+
+				if (isset($Product->maxprocess)) $this->processing['max'] = $Product->maxprocess;
+			}
+
 		}
-		$Settings = ShoppSettings();
-		$this->inventory = ($Price->inventory == "on")?true:false;
-		$this->taxable = ($Price->tax == "on" && $Settings->get('taxes') == "on")?true:false;
+
 	}
 
 	/**
 	 * Validates the line item
 	 *
 	 * Ensures the product and price object exist in the catalog and that
-	 * inventory is available for the selected price variation.
+	 * inventory is available for the selected price variant.
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
@@ -159,12 +240,15 @@ class Item {
 	 * @return boolean
 	 **/
 	function valid () {
-		if (!$this->product || !$this->priceline) {
-			new ShoppError(__('The product could not be added to the cart because it could not be found.','cart_item_invalid',SHOPP_ERR));
+		// no product or no price specified
+		if ( ! $this->product || ! $this->priceline ) {
+			new ShoppError(__('The product could not be added to the cart because it could not be found.','Shopp'),'cart_item_invalid',SHOPP_ERR);
 			return false;
 		}
-		if ($this->inventory && !$this->instock()) {
-			new ShoppError(__('The product could not be added to the cart because it is not in stock.','cart_item_invalid',SHOPP_ERR));
+
+		// the item is not in stock
+		if ( ! $this->instock() ) {
+			new ShoppError(__('The product could not be added to the cart because it is not in stock.','Shopp'),'cart_item_invalid',SHOPP_ERR);
 			return false;
 		}
 		return true;
@@ -199,24 +283,32 @@ class Item {
 	 **/
 	function quantity ($qty) {
 
-		if ($this->type == "Donation" && $this->donation['var'] == "on") {
-			if ($this->donation['min'] == "on" && floatvalue($qty) < $this->unitprice)
+		if ( $this->type == 'Donation' && str_true($this->donation['var']) ) {
+			if ( str_true($this->donation['min']) && floatvalue($qty) < $this->unitprice )
 				$this->unitprice = $this->unitprice;
 			else $this->unitprice = floatvalue($qty,false);
 			$this->quantity = 1;
 			$qty = 1;
 		}
 
+		if ( in_array($this->type, array('Membership','Subscription')) || 'Download' == $this->type && shopp_setting_enabled('download_quantity') ) {
+			return ($this->quantity = 1);
+		}
+
 		$qty = preg_replace('/[^\d+]/','',$qty);
-		if ($this->inventory) {
+		$this->quantity = $qty;
+
+		if ( ! $this->instock($qty) ) {
 			$levels = array($this->option->stock);
 			foreach ($this->addons as $addon) // Take into account stock levels of any addons
-				if ($addon->inventory == "on") $levels[] = $addon->stock;
-			if ($qty > min($levels)) {
+				if ( str_true($addon->inventory) ) $levels[] = $addon->stock;
+
+			if ( $qty > $min = min($levels) ) {
 				new ShoppError(__('Not enough of the product is available in stock to fulfill your request.','Shopp'),'item_low_stock');
-				$this->quantity = min($levels);
-			} else $this->quantity = $qty;
-		} else $this->quantity = $qty;
+				if ( ! $min ) return; // don't set min to item quantity if no stock
+				$this->quantity = $min;
+			}
+		}
 
 		$this->retotal();
 	}
@@ -230,7 +322,7 @@ class Item {
 	 * @return void
 	 **/
 	function add ($qty) {
-		if ($this->type == "Donation" && $this->donation['var'] == "on") {
+		if ( $this->type == 'Donation' && str_true($this->donation['var']) ) {
 			$qty = floatvalue($qty);
 			$this->quantity = $this->unitprice;
 		}
@@ -238,7 +330,7 @@ class Item {
 	}
 
 	/**
-	 * Generates an option menu of available price variations
+	 * Generates an option menu of available price variants
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
@@ -247,23 +339,23 @@ class Item {
 	 * @param float $taxrate (optional) The tax rate to apply to pricing information
 	 * @return string
 	 **/
-	function options ($selection = "") {
-		if (empty($this->variations)) return "";
+	function options ($selection = '') {
+		if (empty($this->variants)) return '';
 
-		$string = "";
-		foreach($this->variations as $option) {
-			if ($option->type == "N/A") continue;
-			$currently = ($option->onsale?$option->promoprice:$option->price)+$this->addonsum;
+		$string = '';
+		foreach($this->variants as $option) {
+			if ($option->type == 'N/A') continue;
+			$currently = (str_true($option->sale)?$option->promoprice:$option->price)+$this->addonsum;
 			$difference = (float)($currently+$this->unittax)-($this->unitprice+$this->unittax);
 
 			$price = '';
 			if ($difference > 0) $price = '  (+'.money($difference).')';
 			if ($difference < 0) $price = '  (-'.money(abs($difference)).')';
 
-			$selected = "";
+			$selected = '';
 			if ($selection == $option->id) $selected = ' selected="selected"';
-			$disabled = "";
-			if ($option->inventory == "on" && $option->stock < $this->quantity)
+			$disabled = '';
+			if ( str_true($option->inventory) && $option->stock < $this->quantity )
 				$disabled = ' disabled="disabled"';
 
 			$string .= '<option value="'.$option->id.'"'.$selected.$disabled.'>'.$option->label.$price.'</option>';
@@ -273,7 +365,7 @@ class Item {
 	}
 
 	/**
-	 * Populates the variations from a collection of price objects
+	 * Populates the variants from a collection of price objects
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
@@ -281,11 +373,11 @@ class Item {
 	 * @param array $prices A list of Price objects
 	 * @return void
 	 **/
-	function variations ($prices) {
+	function variants ($prices) {
 		foreach ($prices as $price)	{
-			if ($price->type == "N/A" || $price->context != "variation") continue;
+			if ('N/A' == $price->type || 'variation' != $price->context) continue;
 			$pricing = $this->mapprice($price);
-			if ($pricing) $this->variations[] = $pricing;
+			if ($pricing) $this->variants[] = $pricing;
 		}
 	}
 
@@ -300,14 +392,25 @@ class Item {
 	 **/
 	function addons (&$sum,$addons,$prices,$property='pricing') {
 		foreach ($prices as $p)	{
-			if ($p->type == "N/A" || $p->context != "addon") continue;
+			if ('N/A' == $p->type || 'addon' != $p->context) continue;
 			$pricing = $this->mapprice($p);
-			if (empty($pricing) || !in_array($pricing->options,$addons)) continue;
-			if ($property == "pricing") {
-				$pricing->unitprice = (($p->onsale)?$p->promoprice:$p->price);
+			if (empty($pricing) || !in_array($pricing->id,$addons)) continue;
+			if ('Shipped' == $p->type) $this->shipped = true;
+			if ($property == 'pricing') {
+				$pricing->unitprice = (str_true($p->sale)?$p->promoprice:$p->price);
 				$this->addons[] = $pricing;
 				$sum += $pricing->unitprice;
 
+				if (shopp_setting_enabled('taxes') && str_true($pricing->tax))
+					$this->taxable[] = $pricing->unitprice;
+
+			} elseif ('dimensions' == $property) {
+				if ( ! str_true($p->shipping) || 'Shipped' != $p->type ) continue;
+				foreach ($p->dimensions as $dimension => $value)
+					$sum[$dimension] += $value;
+			} elseif ('shipfee' == $property) {
+				if ( ! str_true($p->shipping) ) continue;
+				$sum += $pricing->shipfee;
 			} else {
 				if (isset($pricing->$property)) $sum += $pricing->$property;
 			}
@@ -318,25 +421,25 @@ class Item {
 	 * Maps price object properties
 	 *
 	 * Populates only the necessary properties from a price object
-	 * to a variation option to cut down on line item data size
+	 * to a variant option to cut down on line item data size
 	 * for better serialization performance.
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
 	 *
 	 * @param Object $price Price object to minimize
-	 * @return object An Item variation object
+	 * @return object An Item variant object
 	 **/
 	function mapprice ($price) {
 		$map = array(
-			'id','type','label','onsale','promoprice','price',
-			'inventory','stock','sku','options','dimensions',
-			'shipfee','download'
+			'id','type','label','sale','promoprice','price',
+			'tax','inventory','stock','sku','options','dimensions',
+			'shipfee','download','recurring'
 		);
 		$_ = new stdClass();
 		foreach ($map as $property) {
 			if (empty($price->options) && $property == 'label') continue;
-			$_->{$property} = $price->{$property};
+			if (isset($price->{$property})) $_->{$property} = $price->{$property};
 		}
 		return $_;
 	}
@@ -357,6 +460,89 @@ class Item {
 	}
 
 	/**
+	 * Sets the current subscription payment plan status
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.2
+	 *
+	 * @return void
+	 **/
+	function recurrences () {
+		if (empty($this->option->recurring)) return;
+
+		// if free subscription, don't process as subscription
+		if ( 0 == $this->option->promoprice ) return;
+		extract($this->option->recurring);
+
+		$term_labels = array(
+			// _nx_noop( singular, plural, context)
+			'trial' => array(
+				'd' => _nx_noop("%s for the first day.",  "%s for the first %s days.", 		"Trial term label: '$10 for the first day.' or '$5 for the first 10 days.'"),
+				'w' => _nx_noop("%s for the first week.", "%s for the first %s weeks.", 	"Trial term label: '$10 for the first week.' or '$5 for the first 10 weeks.'"),
+				'm' => _nx_noop("%s for the first month.","%s for the first %s months.", 	"Trial term label: '$10 for the first month.' or '$5 for the first 10 months.'"),
+				'y' => _nx_noop("%s for the first year.", "%s for the first %s years.", 	"Trial term label: '$10 for the first year.' or '$5 for the first 10 years.'"),
+			),
+			'freetrial' => array(
+				'd' => _nx_noop("Free for the first day.",   "Free for the first %s days.",		"Free trial label."),
+				'w' => _nx_noop("Free for the first week.",  "Free for the first %s weeks.",	"Free trial label."),
+				'm' => _nx_noop("Free for the first month.", "Free for the first %s months.", 	"Free trial label."),
+				'y' => _nx_noop("Free for the first year.",  "Free for the first %s years.", 	"Free trial label."),
+			),
+			'aftertrial' => array(
+				'd' => _nx_noop("%s per day after the trial period.", "%s every %s days after the trial period.",		"Subscription term label: '$10 per day after the trial period.' or '$5 every 10 days after the trial period.'"),
+				'w' => _nx_noop("%s per week after the trial period.", "%s every %s weeks after the trial period.",		"Subscription term label: '$10 per week after the trial period.' or '$5 every 10 weeks after the trial period.'"),
+				'm' => _nx_noop("%s per month after the trial period.", "%s every %s months after the trial period.",	"Subscription term label: '$10 per month after the trial period.' or '$5 every 10 months after the trial period.'"),
+				'y' => _nx_noop("%s per year after the trial period.", "%s every %s years after the trial period.", 	"Subscription term label: '$10 per year after the trial period.' or '$5 every 10 years after the trial period.'"),
+			),
+			'period' => array(
+				'd' => _nx_noop("%s per day.", "%s every %s days.", 	"Subscription term label: '$10 per day.' or '$5 every 10 days.'"),
+				'w' => _nx_noop("%s per week.", "%s every %s weeks.", 	"Subscription term label: '$10 per week.' or '$5 every 10 weeks.'"),
+				'm' => _nx_noop("%s per month.", "%s every %s months.", "Subscription term label: '$10 per month.' or '$5 every 10 months.'"),
+				'y' => _nx_noop("%s per year.", "%s every %s years.", 	"Subscription term label: '$10 per year.' or '$5 every 10 years.'"),
+			),
+		);
+
+		$rebill_labels = array(
+			0 => __('Subscription rebilled unlimited times.', 'Shopp'),
+			1 => _n_noop('Subscription rebilled once.', 'Subscription rebilled %s times.'),
+		);
+
+		// Build Trial Label
+		if ( str_true($trial) ) {
+			// pick untranlated label
+			$trial_label = ( $trialprice > 0 ? $term_labels['trial'][$trialperiod] : $term_labels['freetrial'][$trialperiod] );
+
+			// pick singular or plural translation
+			$trial_label = translate_nooped_plural($trial_label, $trialint, 'Shopp');
+
+			// string replacements
+			if ( $trialprice > 0 ) {
+				$trial_label = sprintf($trial_label, money($trialprice), $trialint);
+			} else {
+				$trial_label = sprintf($trial_label, $trialint);
+			}
+
+			$this->data[_x('Trial Period','Item trial period label','Shopp')] = $trial_label;
+		}
+
+		// pick untranslated label
+		$normal = str_true($trial) ? 'aftertrial' : 'period';
+		$subscription_label = $term_labels[$normal][$period];
+
+		// pick singular or plural translation
+		$subscription_label = translate_nooped_plural($subscription_label, $interval);
+		$subscription_label = sprintf($subscription_label, money($this->subprice), $interval);
+
+		// pick rebilling label and translate if plurals
+		$rebill_label = sprintf(translate_nooped_plural($rebill_labels[1], $cycles, 'Shopp'), $cycles);
+		if ( ! $cycles ) $rebill_label =  $rebill_labels[0];
+
+		$this->data[_x('Subscription','Subscription terms label','Shopp')] = array($subscription_label,$rebill_label);
+
+		$this->recurring = true;
+	}
+
+	/**
 	 * Unstock the item from inventory
 	 *
 	 * @author Jonathan Davis
@@ -365,38 +551,43 @@ class Item {
 	 * @return void
 	 **/
 	function unstock () {
-		if (!$this->inventory) return;
-		$db = DB::get();
-		$Settings =& ShoppSettings();
+		// no inventory tracking system wide
+		if ( ! shopp_setting_enabled('inventory') ) return;
+
+		// collect list of ids to update
+		$ids = array();
+		if ( $this->inventory ) $ids[] = $this->priceline;
+		if ( ! empty($this->addons) ) {
+			foreach ($this->addons as $addon) {
+				if ( str_true($addon->inventory) )
+					$ids[] = $addon->id;
+			}
+		}
+
+		// no inventory tracked base item or addons
+		if ( empty($ids) ) return;
 
 		// Update stock in the database
-		$table = DatabaseObject::tablename(Price::$table);
-		$db->query("UPDATE $table SET stock=stock-{$this->quantity} WHERE id='{$this->priceline}' AND stock > 0");
+		$pricetable = DatabaseObject::tablename(Price::$table);
+		foreach ( $ids as $priceline ) {
+			db::query("UPDATE $pricetable SET stock=stock-{$this->quantity} WHERE id='{$priceline}'");
+		}
 
-		if (!empty($this->addons)) {
+		// Force summary update to get new stock warning levels on next load
+		$summarytable = DatabaseObject::tablename(ProductSummary::$table);
+		db::query("UPDATE $summarytable SET modified='".ProductSummary::$_updates."' WHERE product='{$this->product}'");
+
+		// Update
+		if ( ! empty($this->addons) ) {
 			foreach ($this->addons as &$Addon) {
-				$db->query("UPDATE $table SET stock=stock-{$this->quantity} WHERE id='{$Addon->id}' AND stock > 0");
-				$Addon->stock -= $this->quantity;
-				$product_addon = "$product ($Addon->label)";
-				if ($Addon->stock == 0)
-					new ShoppError(sprintf(__('%s is now out-of-stock!','Shopp'),$product_addon),'outofstock_warning',SHOPP_STOCK_ERR);
-				elseif ($Addon->stock <= $Settings->get('lowstock_level'))
-					return new ShoppError(sprintf(__('%s has low stock levels and should be re-ordered soon.','Shopp'),$product_addon),'lowstock_warning',SHOPP_STOCK_ERR);
-
+				if ( str_true($addon->inventory) ) {
+					$Addon->stock -= $this->quantity;
+				}
 			}
 		}
 
 		// Update stock in the model
-		$this->option->stock -= $this->quantity;
-
-		// Handle notifications
-		$product = "$this->name (".$this->option->label.")";
-		if ($this->option->stock == 0)
-			return new ShoppError(sprintf(__('%s is now out-of-stock!','Shopp'),$product),'outofstock_warning',SHOPP_STOCK_ERR);
-
-		if ($this->option->stock <= $Settings->get('lowstock_level'))
-			return new ShoppError(sprintf(__('%s has low stock levels and should be re-ordered soon.','Shopp'),$product),'lowstock_warning',SHOPP_STOCK_ERR);
-
+		if ( $this->inventory ) $this->option->stock = $this->option->stock - $this->quantity;
 	}
 
 	/**
@@ -407,14 +598,32 @@ class Item {
 	 *
 	 * @return boolean
 	 **/
-	function instock () {
-		if (!$this->inventory) return true;
+	function instock ( $qty = false ) {
+		if ( ! shopp_setting_enabled('inventory') ) return true;
+
+		if ( ! $this->inventory ) {
+			// base item doesn't track inventory and no addons
+			if ( empty($this->addons) ) return true;
+
+			$addon_inventory = false;
+			foreach ($this->addons as $addon) {
+				if ( str_true($addon->inventory) )
+					$addon_inventory = true;
+			}
+
+			// base item doesn't track inventory, but an addon does
+			if ( ! $addon_inventory ) return true;
+		}
+
+		// need to get the current minimum stock for item + addons
 		$this->option->stock = $this->getstock();
-		return $this->option->stock >= $this->quantity;
+
+		if ( $qty ) return $this->option->stock >= $qty;
+		return ( $this->option->stock > 0 );
 	}
 
 	/**
-	 * Determines the stock level of the line item
+	 * Determines the minimum stock level of the item and its addons
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.1
@@ -422,18 +631,108 @@ class Item {
 	 * @return int The amount of stock available
 	 **/
 	function getstock () {
-		$db = DB::get();
 		$stock = apply_filters('shopp_cartitem_stock',false,$this);
 		if ($stock !== false) return $stock;
 
 		$table = DatabaseObject::tablename(Price::$table);
 		$ids = array($this->priceline);
-		if (!empty($this->addons)) foreach ($this->addons as $addon) $ids[] = $addon->id;
-		$result = $db->query("SELECT min(stock) AS stock FROM $table WHERE 0 < FIND_IN_SET(id,'".join(',',$ids)."')");
+
+		if ( ! empty($this->addons) ) {
+			foreach ($this->addons as $addon) {
+				if ( str_true($addon->inventory) )
+					$ids[] = $addon->id;
+			}
+		}
+
+		$result = db::query("SELECT min(stock) AS stock FROM $table WHERE 0 < FIND_IN_SET(id,'".join(',',$ids)."')");
 		if (isset($result->stock)) return $result->stock;
 
 		return $this->option->stock;
 	}
+
+	/**
+	 * is_recurring()
+	 *
+	 * Tests if the item is recurring
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @return bool true if recurring, false otherwise
+	 **/
+	function is_recurring () {
+		$recurring = ($this->recurring && ! empty($this->option) && ! empty($this->option->recurring));
+		return apply_filters('shopp_cartitem_recurring', $recurring, $this);
+	}
+
+	function has_recurring () {
+		return (! empty($this->option) && ! empty($this->option->recurring));
+	}
+
+	/**
+	 * has_trial()
+	 *
+	 * Tests if item is recurring and has a trial period
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @return bool true if recurring and has trial, false otherwise
+	 **/
+	function has_trial () {
+		$trial = false;
+		if ( $this->is_recurring() && str_true($this->option->recurring['trial']) ) $trial = true;
+		return apply_filters('shopp_cartitem_hastrial', $trial, $this);
+	}
+
+	/**
+	 * trial()
+	 *
+	 * Gets the trial subscription settings for recurring items.
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @return mixed false if no trial, array of trial interval (interval), trial period (period), and trial price (price) if set
+	 **/
+	function trial () {
+		$trial = false;
+
+		if ( $this->has_trial() ) {
+			$trial = array(
+				'interval' => $this->option->recurring['trialint'],
+				'period' => $this->option->recurring['trialperiod'],
+				'price' => $this->option->recurring['trialprice']
+			);
+		}
+
+		return apply_filters('shopp_cartitem_trial_settings', $trial, $this);
+	}
+
+	/**
+	 * recurring()
+	 *
+	 * Gets the recurring settings for a recurring item.
+	 *
+	 * @author John Dillick
+	 * @since 1.2
+	 *
+	 * @return mixed false if not a recurring item, array of interval (interval), period (period), and number of cycles (cycles) if set.
+	 **/
+	function recurring () {
+		$recurring = false;
+
+		if ( $this->is_recurring() ) {
+			$recurring = array(
+				'interval' => $this->option->recurring['interval'],
+				'period' => $this->option->recurring['period'],
+				'cycles' => $this->option->recurring['cycles']
+			);
+		}
+
+		return apply_filters('shopp_cartitem_recurring_settings', $recurring, $this);
+	}
+
 
 	/**
 	 * Match a rule to the item
@@ -448,22 +747,22 @@ class Item {
 		extract($rule);
 
 		switch($property) {
-			case "Any item name": $subject = $this->name; break;
-			case "Any item quantity": $subject = (int)$this->quantity; break;
-			case "Any item amount": $subject = $this->total; break;
+			case 'Any item name': $subject = $this->name; break;
+			case 'Any item quantity': $subject = (int)$this->quantity; break;
+			case 'Any item amount': $subject = $this->total; break;
 
-			case "Name": $subject = $this->name; break;
-			case "Category": $subject = $this->categories; break;
-			case "Tag name": $subject = $this->tags; break;
-			case "Variation": $subject = $this->option->label; break;
+			case 'Name': $subject = $this->name; break;
+			case 'Category': $subject = $this->categories; break;
+			case 'Tag name': $subject = $this->tags; break;
+			case 'Variation': $subject = $this->option->label; break;
 
-			// case "Input name": $subject = $Item->option->label; break;
-			// case "Input value": $subject = $Item->option->label; break;
+			// case 'Input name': $subject = $Item->option->label; break;
+			// case 'Input value': $subject = $Item->option->label; break;
 
-			case "Quantity": $subject = $this->quantity; break;
-			case "Unit price": $subject = $this->unitprice; break;
-			case "Total price": $subject = $this->total; break;
-			case "Discount amount": $subject = $this->discount; break;
+			case 'Quantity': $subject = $this->quantity; break;
+			case 'Unit price': $subject = $this->unitprice; break;
+			case 'Total price': $subject = $this->total; break;
+			case 'Discount amount': $subject = $this->discount; break;
 
 		}
 		return Promotion::match_rule($subject,$logic,$value,$property);
@@ -471,9 +770,9 @@ class Item {
 
 	function taxrule ($rule) {
 		switch ($rule['p']) {
-			case "product-name": return ($rule['v'] == $this->name); break;
-			case "product-tags": return (in_array($rule['v'],$this->tags)); break;
-			case "product-category": return (in_array($rule['v'],$this->categories)); break;
+			case 'product-name': return ($rule['v'] == $this->name); break;
+			case 'product-tags': return (in_array($rule['v'],$this->tags)); break;
+			case 'product-category': return (in_array($rule['v'],$this->categories)); break;
 		}
 		return false;
 	}
@@ -487,242 +786,37 @@ class Item {
 	 * @return void
 	 **/
 	function retotal () {
-		$this->taxrate = shopp_taxrate(true,$this->taxable,$this);
+		$this->taxrate = shopp_taxrate(true,$this->istaxed,$this);
 
 		$this->priced = ($this->unitprice-$this->discount); // discounted unit price
 		$this->discounts = ($this->discount*$this->quantity); // total item discount figure
 
-		$this->unittax = ($this->unitprice*$this->taxrate); // unit tax	figure
-		$this->pricedtax = ($this->priced*$this->taxrate); // discounted unit tax
+		if ($this->istaxed) {
+			 // Distribute discounts across taxable amounts using weighted averages
+			$_ = array();
+			foreach ($this->taxable as $amount)
+				$_[] = $amount - ( ($amount / $this->unitprice) * $this->discount );
+			$taxable = array_sum($_);
 
-		$this->tax = ($this->pricedtax*$this->quantity); // total discounted tax amount
+			$this->unittax = ($taxable*$this->taxrate); // unit tax figure
+			$this->pricedtax = ($taxable*$this->taxrate); // discounted unit tax
+			$this->tax = ($this->pricedtax*$this->quantity); // total discounted tax amount
+		}
+
 		$this->total = ($this->unitprice * $this->quantity); // total undiscounted, pre-tax line price
 		$this->totald = ($this->priced * $this->quantity); // total discounted, pre-tax line price
 
-	}
-
-	/**
-	 * Provides support for the shopp('cartitem') tags
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.1
-	 *
-	 * @return mixed
-	 **/
-	function tag ($id,$property,$options=array()) {
-		global $Shopp;
-
-		// Return strings with no options
-		switch ($property) {
-			case "id": return $id;
-			case "product": return $this->product;
-			case "name": return $this->name;
-			case "type": return $this->type;
-			case "link":
-			case "url":
-				return shoppurl(SHOPP_PRETTYURLS?$this->slug:array('shopp_pid'=>$this->product));
-			case "sku": return $this->sku;
+		if ($this->is_recurring()) {
+			$this->subprice = $this->priced;
+			if ($this->has_trial()) {
+				$this->subprice = ($this->option->promoprice-$this->discount);
+				$this->discounts = 0;
+				$this->recurrences();
+			}
 		}
 
-		$taxes = isset($options['taxes'])?value_is_true($options['taxes']):null;
-		if (in_array($property,array('price','newprice','unitprice','total','tax','options')))
-			$taxes = shopp_taxrate($taxes,$this->taxable,$this) > 0?true:false;
+		do_action('shopp_cart_item_retotal',$this);
 
-		// Handle currency values
-		$result = "";
-		switch ($property) {
-			case "discount": $result = (float)$this->discount; break;
-			case "unitprice": $result = (float)$this->unitprice+($taxes?$this->unittax:0); break;
-			case "unittax": $result = (float)$this->unittax; break;
-			case "discounts": $result = (float)$this->discounts; break;
-			case "tax": $result = (float)$this->tax; break;
-			case "total": $result = (float)$this->total+($taxes?($this->unittax*$this->quantity):0); break;
-		}
-		if (is_float($result)) {
-			if (isset($options['currency']) && !value_is_true($options['currency'])) return $result;
-			else return money($result);
-		}
-
-		// Handle values with complex options
-		switch ($property) {
-			case "taxrate": return percentage($this->taxrate*100,array('precision' => 1)); break;
-			case "quantity":
-				$result = $this->quantity;
-				if ($this->type == "Donation" && $this->donation['var'] == "on") return $result;
-				if (isset($options['input']) && $options['input'] == "menu") {
-					if (!isset($options['value'])) $options['value'] = $this->quantity;
-					if (!isset($options['options']))
-						$values = "1-15,20,25,30,35,40,45,50,60,70,80,90,100";
-					else $values = $options['options'];
-
-					if (strpos($values,",") !== false) $values = explode(",",$values);
-					else $values = array($values);
-					$qtys = array();
-					foreach ($values as $value) {
-						if (strpos($value,"-") !== false) {
-							$value = explode("-",$value);
-							if ($value[0] >= $value[1]) $qtys[] = $value[0];
-							else for ($i = $value[0]; $i < $value[1]+1; $i++) $qtys[] = $i;
-						} else $qtys[] = $value;
-					}
-					$result = '<select name="items['.$id.']['.$property.']">';
-					foreach ($qtys as $qty)
-						$result .= '<option'.(($qty == $this->quantity)?' selected="selected"':'').' value="'.$qty.'">'.$qty.'</option>';
-					$result .= '</select>';
-				} elseif (isset($options['input']) && valid_input($options['input'])) {
-					if (!isset($options['size'])) $options['size'] = 5;
-					if (!isset($options['value'])) $options['value'] = $this->quantity;
-					$result = '<input type="'.$options['input'].'" name="items['.$id.']['.$property.']" id="items-'.$id.'-'.$property.'" '.inputattrs($options).'/>';
-				} else $result = $this->quantity;
-				break;
-			case "remove":
-				$label = __("Remove");
-				if (isset($options['label'])) $label = $options['label'];
-				if (isset($options['class'])) $class = ' class="'.$options['class'].'"';
-				else $class = ' class="remove"';
-				if (isset($options['input'])) {
-					switch ($options['input']) {
-						case "button":
-							$result = '<button type="submit" name="remove['.$id.']" value="'.$id.'"'.$class.' tabindex="">'.$label.'</button>'; break;
-						case "checkbox":
-						    $result = '<input type="checkbox" name="remove['.$id.']" value="'.$id.'"'.$class.' tabindex="" title="'.$label.'"/>'; break;
-					}
-				} else {
-					$result = '<a href="'.href_add_query_arg(array('cart'=>'update','item'=>$id,'quantity'=>0),shoppurl(false,'cart')).'"'.$class.'>'.$label.'</a>';
-				}
-				break;
-			case "optionlabel": $result = $this->option->label; break;
-			case "options":
-				$class = "";
-				if (!isset($options['before'])) $options['before'] = '';
-				if (!isset($options['after'])) $options['after'] = '';
-				if (isset($options['show']) &&
-					strtolower($options['show']) == "selected")
-					return (!empty($this->option->label))?
-						$options['before'].$this->option->label.$options['after']:'';
-
-				if (isset($options['class'])) $class = ' class="'.$options['class'].'" ';
-				if (count($this->variations) > 1) {
-					$result .= $options['before'];
-					$result .= '<input type="hidden" name="items['.$id.'][product]" value="'.$this->product.'"/>';
-					$result .= ' <select name="items['.$id.'][price]" id="items-'.$id.'-price"'.$class.'>';
-					$result .= $this->options($this->priceline);
-					$result .= '</select>';
-					$result .= $options['after'];
-				}
-				break;
-			case "addons-list":
-			case "addonslist":
-				if (empty($this->addons)) return false;
-				$defaults = array(
-					'before' => '',
-					'after' => '',
-					'class' => '',
-					'exclude' => '',
-					'prices' => true,
-
-				);
-				$options = array_merge($defaults,$options);
-				extract($options);
-
-				$classes = !empty($class)?' class="'.join(' ',$class).'"':'';
-				$excludes = explode(',',$exclude);
-				$prices = value_is_true($prices);
-
-				$result .= $before.'<ul'.$classes.'>';
-				foreach ($this->addons as $id => $addon) {
-					if (in_array($addon->label,$excludes)) continue;
-
-					$price = ($addon->onsale?$addon->promoprice:$addon->price);
-					if ($this->taxrate > 0) $price = $price+($price*$this->taxrate);
-
-					if ($prices) $pricing = " (".($addon->unitprice < 0?'-':'+').money($price).")";
-					$result .= '<li>'.$addon->label.$pricing.'</li>';
-				}
-				$result .= '</ul>'.$after;
-				return $result;
-				break;
-			case "hasinputs":
-			case "has-inputs": return (count($this->data) > 0); break;
-			case "inputs":
-				if (!isset($this->_data_loop)) {
-					reset($this->data);
-					$this->_data_loop = true;
-				} else next($this->data);
-
-				if (current($this->data) !== false) return true;
-				else {
-					unset($this->_data_loop);
-					reset($this->data);
-					return false;
-				}
-				break;
-			case "input":
-				$data = current($this->data);
-				$name = key($this->data);
-				if (isset($options['name'])) return $name;
-				return $data;
-				break;
-			case "inputs-list":
-			case "inputslist":
-				if (empty($this->data)) return false;
-				$before = ""; $after = ""; $classes = ""; $excludes = array();
-				if (!empty($options['class'])) $classes = ' class="'.$options['class'].'"';
-				if (!empty($options['exclude'])) $excludes = explode(",",$options['exclude']);
-				if (!empty($options['before'])) $before = $options['before'];
-				if (!empty($options['after'])) $after = $options['after'];
-
-				$result .= $before.'<ul'.$classes.'>';
-				foreach ($this->data as $name => $data) {
-					if (in_array($name,$excludes)) continue;
-					$result .= '<li><strong>'.$name.'</strong>: '.$data.'</li>';
-				}
-				$result .= '</ul>'.$after;
-				return $result;
-				break;
-			case "coverimage":
-			case "thumbnail":
-				$defaults = array(
-					'class' => '',
-					'width' => 48,
-					'height' => 48,
-					'size' => false,
-					'fit' => false,
-					'sharpen' => false,
-					'quality' => false,
-					'bg' => false,
-					'alt' => false,
-					'title' => false
-				);
-
-				$options = array_merge($defaults,$options);
-				extract($options);
-
-				if ($this->image !== false) {
-					$img = $this->image;
-
-					if ($size !== false) $width = $height = $size;
-					$scale = (!$fit)?false:esc_attr(array_search($fit,$img->_scaling));
-					$sharpen = (!$sharpen)?false:esc_attr(min($sharpen,$img->_sharpen));
-					$quality = (!$quality)?false:esc_attr(min($quality,$img->_quality));
-					$fill = (!$bg)?false:esc_attr(hexdec(ltrim($bg,'#')));
-					$scaled = $img->scaled($width,$height,$scale);
-
-					$alt = empty($alt)?$img->alt:$alt;
-					$title = empty($title)?$img->title:$title;
-					$title = empty($title)?'':' title="'.esc_attr($title).'"';
-					$class = !empty($class)?' class="'.esc_attr($class).'"':'';
-
-					if (!empty($options['title'])) $title = ' title="'.esc_attr($options['title']).'"';
-					$alt = esc_attr(!empty($img->alt)?$img->alt:$this->name);
-					return '<img src="'.add_query_string($img->resizing($width,$height,$scale,$sharpen,$quality,$fill),shoppurl($img->id,'images')).'"'.$title.' alt="'.$alt.'" width="'.$scaled['width'].'" height="'.$scaled['height'].'"'.$class.' />';
-				}
-				break;
-
-		}
-		if (!empty($result)) return $result;
-
-		return false;
 	}
 
 } // END class Item

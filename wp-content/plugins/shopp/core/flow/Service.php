@@ -20,6 +20,10 @@
  **/
 class Service extends AdminController {
 
+	var $screen = 'toplevel_page_shopp-orders';
+	var $orders = array();
+	var $ordercount = false;
+
 	/**
 	 * Service constructor
 	 *
@@ -32,13 +36,30 @@ class Service extends AdminController {
 		if (isset($_GET['id'])) {
 			wp_enqueue_script('postbox');
 			shopp_enqueue_script('colorbox');
-			add_action('load-toplevel_page_shopp-orders',array(&$this,'workflow'));
-			add_action('load-toplevel_page_shopp-orders',array(&$this,'layout'));
+			shopp_enqueue_script('jquery-tmpl');
+			shopp_enqueue_script('orders');
+			shopp_localize_script( 'orders', '$om', array(
+				'co' => __('Cancel Order','Shopp'),
+				'mr' => __('Mark Refunded','Shopp'),
+				'pr' => __('Process Refund','Shopp'),
+				'dnc' => __('Do Not Cancel','Shopp'),
+				'ro' => __('Refund Order','Shopp'),
+				'cancel' => __('Cancel','Shopp'),
+				'rr' => __('Reason for refund','Shopp'),
+				'rc' => __('Reason for cancellation','Shopp'),
+				'mc' => __('Mark Cancelled','Shopp'),
+				'stg' => __('Send to gateway','Shopp')
+			));
+
+			add_action('load-'.$this->screen,array($this,'workflow'));
+			add_action('load-'.$this->screen,array($this,'layout'));
 			do_action('shopp_order_management_scripts');
 
-		} else add_action('admin_print_scripts',array(&$this,'columns'));
+		} else {
+			add_action('load-'.$this->screen,array($this,'loader'));
+			add_action('admin_print_scripts',array($this,'columns'));
+		}
 		do_action('shopp_order_admin_scripts');
-
 	}
 
 	/**
@@ -53,23 +74,23 @@ class Service extends AdminController {
 	}
 
 	function workflow () {
-		global $Shopp;
 		if (preg_match("/\d+/",$_GET['id'])) {
-			$Shopp->Purchase = new Purchase($_GET['id']);
-			$Shopp->Purchase->load_purchased();
-		} else $Shopp->Purchase = new Purchase();
+			ShoppPurchase( new Purchase($_GET['id']) );
+			ShoppPurchase()->load_purchased();
+			ShoppPurchase()->load_events();
+		} else ShoppPurchase( new Purchase() );
 	}
 
 	/**
-	 * Interface processor for the orders list interface
+	 * Handles orders list loading
 	 *
 	 * @author Jonathan Davis
+	 * @since 1.2.1
 	 *
 	 * @return void
 	 **/
-	function orders () {
-		global $Shopp,$Orders;
-		$db = DB::get();
+	function loader () {
+		if ( ! current_user_can('shopp_orders') ) return;
 
 		$defaults = array(
 			'page' => false,
@@ -78,7 +99,8 @@ class Service extends AdminController {
 			'update' => false,
 			'newstatus' => false,
 			'pagenum' => 1,
-			'per_page' => false,
+			'paged' => 1,
+			'per_page' => 20,
 			'start' => '',
 			'end' => '',
 			'status' => false,
@@ -91,8 +113,7 @@ class Service extends AdminController {
 		$args = array_merge($defaults,$_GET);
 		extract($args, EXTR_SKIP);
 
-		if ( !(is_shopp_userlevel() || current_user_can('shopp_orders')) )
-			wp_die(__('You do not have sufficient permissions to access this page.','Shopp'));
+		$url = add_query_arg(array_merge($_GET,array('page'=>$this->Admin->pagename('orders'))),admin_url('admin.php'));
 
 		if ($page == "shopp-orders"
 						&& !empty($deleting)
@@ -108,16 +129,13 @@ class Service extends AdminController {
 				}
 				$Purchase->delete();
 			}
+			if (count($selected) == 1) $this->notice(__('Order deleted.','Shopp'));
+			else $this->notice(sprintf(__('%d orders deleted.','Shopp'),count($selected)));
 		}
 
-		$statusLabels = $this->Settings->get('order_status');
+		$statusLabels = shopp_setting('order_status');
 		if (empty($statusLabels)) $statusLabels = array('');
-		$txnStatusLabels = array(
-			'PENDING' => __('Pending','Shopp'),
-			'CHARGED' => __('Charged','Shopp'),
-			'REFUNDED' => __('Refunded','Shopp'),
-			'VOID' => __('Void','Shopp')
-			);
+		$txnstatus_labels = Lookup::txnstatus_labels();
 
 		if ($update == "order"
 						&& !empty($selected)
@@ -127,9 +145,13 @@ class Service extends AdminController {
 				$Purchase->status = $newstatus;
 				$Purchase->save();
 			}
+			if (count($selected) == 1) $this->notice(__('Order status updated.','Shopp'));
+			else $this->notice(sprintf(__('%d orders updated.','Shopp'),count($selected)));
 		}
 
 		$Purchase = new Purchase();
+
+		$offset = get_option( 'gmt_offset' ) * 3600;
 
 		if (!empty($start)) {
 			$startdate = $start;
@@ -142,53 +164,95 @@ class Service extends AdminController {
 			$ends = mktime(23,59,59,$month,$day,$year);
 		}
 
-		$pagenum = absint( $pagenum );
-		if ( empty($pagenum) )
-			$pagenum = 1;
-		if( !$per_page || $per_page < 0 )
-			$per_page = 20;
+		$pagenum = absint( $paged );
 		$start = ($per_page * ($pagenum-1));
 
-		$where = '';
-		if (!empty($status) || $status === '0') $where = "WHERE status='$status'";
-
+		$where = array();
+		if (!empty($status) || $status === '0') $where[] = "status='".DB::escape($status)."'";
 		if (!empty($s)) {
 			$s = stripslashes($s);
+			$search = array();
 			if (preg_match_all('/(\w+?)\:(?="(.+?)"|(.+?)\b)/',$s,$props,PREG_SET_ORDER) > 0) {
-				foreach ($props as $search) {
-					$keyword = !empty($search[2])?$search[2]:$search[3];
-					switch(strtolower($search[1])) {
-						case "txn": $where .= (empty($where)?"WHERE ":" AND ")."txnid='$keyword'"; break;
-						case "gateway": $where .= (empty($where)?"WHERE ":" AND ")."gateway LIKE '%$keyword%'"; break;
-						case "cardtype": $where .= ((empty($where))?"WHERE ":" AND ")."cardtype LIKE '%$keyword%'"; break;
-						case "address": $where .= ((empty($where))?"WHERE ":" AND ")."(address LIKE '%$keyword%' OR xaddress='%$keyword%')"; break;
-						case "city": $where .= ((empty($where))?"WHERE ":" AND ")."city LIKE '%$keyword%'"; break;
+				foreach ($props as $query) {
+					$keyword = DB::escape( ! empty($query[2]) ? $query[2] : $query[3] );
+					switch(strtolower($query[1])) {
+						case "txn": 		$search[] = "txnid='$keyword'"; break;
+						case "company":		$search[] = "company LIKE '%$keyword%'"; break;
+						case "gateway":		$search[] = "gateway LIKE '%$keyword%'"; break;
+						case "cardtype":	$search[] = "cardtype LIKE '%$keyword%'"; break;
+						case "address": 	$search[] = "(address LIKE '%$keyword%' OR xaddress='%$keyword%')"; break;
+						case "city": 		$search[] = "city LIKE '%$keyword%'"; break;
 						case "province":
-						case "state": $where .= ((empty($where))?"WHERE ":" AND ")."state='$keyword'"; break;
+						case "state": 		$search[] = "state='$keyword'"; break;
 						case "zip":
 						case "zipcode":
-						case "postcode": $where .= ((empty($where))?"WHERE ":" AND ")."postcode='$keyword'"; break;
-						case "country": $where .= ((empty($where))?"WHERE ":" AND ")."country='$keyword'"; break;
+						case "postcode":	$search[] = "postcode='$keyword'"; break;
+						case "country": 	$search[] = "country='$keyword'"; break;
 					}
 				}
-				if (empty($where)) $where .= ((empty($where))?"WHERE ":" AND ")." (id='$s' OR CONCAT(firstname,' ',lastname) LIKE '%$s%')";
+				if (empty($search)) $search[] = "(id='$s' OR CONCAT(firstname,' ',lastname) LIKE '%$s%')";
+				$where[] = "(".join(' OR ',$search).")";
 			} elseif (strpos($s,'@') !== false) {
-				 $where .= ((empty($where))?"WHERE ":" AND ")." email='$s'";
-			} else $where .= ((empty($where))?"WHERE ":" AND ")." (id='$s' OR CONCAT(firstname,' ',lastname) LIKE '%$s%')";
+				 $where[] = "email='".DB::escape($s)."'";
+			} else $where[] = "(id='$s' OR CONCAT(firstname,' ',lastname) LIKE '%".DB::escape($s)."%')";
 		}
-		if (!empty($starts) && !empty($ends)) $where .= ((empty($where))?"WHERE ":" AND ").' (UNIX_TIMESTAMP(created) >= '.$starts.' AND UNIX_TIMESTAMP(created) <= '.$ends.')';
-		if (!empty($customer)) $where .= ((empty($where))?"WHERE ":" AND ")."customer=$customer";
-		$ordercount = $db->query("SELECT count(*) as total,SUM(total) AS sales,AVG(total) AS avgsale FROM $Purchase->_table $where ORDER BY created DESC");
-		$query = "SELECT * FROM $Purchase->_table $where ORDER BY created DESC LIMIT $start,$per_page";
-		$Orders = $db->query($query,AS_ARRAY);
+		if (!empty($starts) && !empty($ends)) $where[] = "created BETWEEN '".DB::mkdatetime($starts)."' AND '".DB::mkdatetime($ends)."'";
 
+		if (!empty($customer)) $where[] = "customer=".intval($customer);
+		$where = !empty($where) ? "WHERE ".join(' AND ',$where) : '';
+
+		$this->ordercount = DB::query("SELECT count(*) as total,SUM(IF(txnstatus IN ('authorized','captured'),total,0)) AS sales,AVG(IF(txnstatus IN ('authorized','captured'),total,0)) AS avgsale FROM $Purchase->_table $where ORDER BY created DESC LIMIT 1",'object');
+		$query = "SELECT * FROM $Purchase->_table $where ORDER BY created DESC LIMIT $start,$per_page";
+
+		$this->orders = DB::query($query,'array','index','id');
+
+		$num_pages = ceil($this->ordercount->total / $per_page);
+		if ($paged > 1 && $paged > $num_pages) shopp_redirect(add_query_arg('paged',null,$url));
+
+	}
+
+	/**
+	 * Interface processor for the orders list interface
+	 *
+	 * @author Jonathan Davis
+	 *
+	 * @return void
+	 **/
+	function orders () {
+		if ( ! current_user_can('shopp_orders') )
+			wp_die(__('You do not have sufficient permissions to access this page.','Shopp'));
+
+		global $Shopp,$Orders;
+
+		$defaults = array(
+			'page' => false,
+			'update' => false,
+			'newstatus' => false,
+			'paged' => 1,
+			'per_page' => 20,
+			'status' => false,
+			's' => '',
+			'range' => '',
+			'startdate' => '',
+			'enddate' => ''
+		);
+
+		$args = array_merge($defaults,$_GET);
+		extract($args, EXTR_SKIP);
+
+		$s = stripslashes($s);
+
+		$statusLabels = shopp_setting('order_status');
+		if (empty($statusLabels)) $statusLabels = array('');
+		$txnstatus_labels = Lookup::txnstatus_labels();
+
+		$Purchase = new Purchase();
+
+		$Orders = $this->orders;
+		$ordercount = $this->ordercount;
 		$num_pages = ceil($ordercount->total / $per_page);
-		$page_links = paginate_links( array(
-			'base' => add_query_arg( 'pagenum', '%#%' ),
-			'format' => '',
-			'total' => $num_pages,
-			'current' => $pagenum
-		));
+
+		$ListTable = ShoppUI::table_set_pagination ($this->screen, $ordercount->total, $num_pages, $per_page );
 
 		$ranges = array(
 			'all' => __('Show All Orders','Shopp'),
@@ -215,12 +279,14 @@ class Service extends AdminController {
 			'iif' => __('Intuit&reg; QuickBooks.iif','Shopp')
 			);
 
-		$formatPref = $Shopp->Settings->get('purchaselog_format');
+		$formatPref = shopp_setting('purchaselog_format');
 		if (!$formatPref) $formatPref = 'tab';
 
 		$columns = array_merge(Purchase::exportcolumns(),Purchased::exportcolumns());
-		$selected = $Shopp->Settings->get('purchaselog_columns');
+		$selected = shopp_setting('purchaselog_columns');
 		if (empty($selected)) $selected = array_keys($columns);
+
+		$Gateways = array_merge($Shopp->Gateways->modules,array('FreeOrder' => $Shopp->Gateways->freeorder));
 
 		include(SHOPP_ADMIN_PATH."/orders/orders.php");
 	}
@@ -236,7 +302,7 @@ class Service extends AdminController {
 	 **/
 	function columns () {
 		shopp_enqueue_script('calendar');
-		register_column_headers('toplevel_page_shopp-orders', array(
+		register_column_headers($this->screen, array(
 			'cb'=>'<input type="checkbox" />',
 			'order'=>__('Order','Shopp'),
 			'name'=>__('Name','Shopp'),
@@ -260,7 +326,9 @@ class Service extends AdminController {
 	function layout () {
 		global $Shopp;
 		$Admin =& $Shopp->Flow->Admin;
+		include(SHOPP_ADMIN_PATH."/orders/events.php");
 		include(SHOPP_ADMIN_PATH."/orders/ui.php");
+		do_action('shopp_order_manager_layout');
 	}
 
 	/**
@@ -270,92 +338,174 @@ class Service extends AdminController {
 	 * @return void
 	 **/
 	function manager () {
-		global $Shopp,$UI,$Notes;
+		global $Shopp,$Notes;
 		global $is_IIS;
 
-		if ( !(is_shopp_userlevel() || current_user_can('shopp_orders')) )
+		if ( ! current_user_can('shopp_orders') )
 			wp_die(__('You do not have sufficient permissions to access this page.','Shopp'));
 
-		$Purchase = $Shopp->Purchase;
+		$Purchase = ShoppPurchase();
 		$Purchase->Customer = new Customer($Purchase->customer);
+		$Gateway = $Purchase->gateway();
+
+		if (!empty($_POST["send-note"])){
+			$user = wp_get_current_user();
+			shopp_add_order_event($Purchase->id,'note',array(
+				'note' => $_POST['note'],
+				'user' => $user->ID
+			));
+
+			$Purchase->load_events();
+		}
 
 		// Handle Order note processing
-		if (!empty($_POST['note'])) {
-			$user = wp_get_current_user();
-			$Note = new MetaObject();
-			$Note->parent = $Purchase->id;
-			$Note->context = 'purchase';
-			$Note->type = 'order_note';
-			$Note->name = 'note';
-			$Note->value = new stdClass();
-			$Note->value->author = $user->ID;
-			$Note->value->message = $_POST['note'];
-			$Note->save();
-		}
+		if (!empty($_POST['note']))
+			$this->addnote($Purchase->id, stripslashes($_POST['note']), !empty($_POST['send-note']));
+
 		if (!empty($_POST['delete-note'])) {
 			$noteid = key($_POST['delete-note']);
-			$Note = new MetaObject($noteid);
+			$Note = new MetaObject(array('id' => $noteid,'type'=>'order_note'));
 			$Note->delete();
 		}
+
 		if (!empty($_POST['edit-note'])) {
 			$noteid = key($_POST['note-editor']);
 			$Note = new MetaObject($noteid);
-			$Note->value->message = $_POST['note-editor'][$noteid];
+			$Note->value->message = stripslashes($_POST['note-editor'][$noteid]);
 			$Note->save();
 		}
 		$Notes = new ObjectMeta($Purchase->id,'purchase','order_note');
 
-		if (!empty($_POST['update'])) {
-			check_admin_referer('shopp-save-order');
-
-			if ($_POST['txnstatus'] != $Purchase->txnstatus)
-				do_action_ref_array('shopp_order_txnstatus_update',array(&$_POST['txnstatus'],&$Purchase));
-
-
-			$Purchase->updates($_POST);
-
-			$mailstatus = false;
-			if ($_POST['notify'] == "yes") {
-				$labels = $this->Settings->get('order_status');
-				// Save a reference to this purchase in Shopp
-				// so the Template API works when generating the receipt
-				$Shopp->Purchase =& $Purchase;
-
-				// Send the e-mail notification
-				$addressee = "$Purchase->firstname $Purchase->lastname";
-				$address = "$Purchase->email";
-
-				$email = array();
-				$email['from'] = '"'.get_bloginfo("name").'"';
-				if ($Shopp->Settings->get('merchant_email'))
-					$email['from'] .= ' <'.$Shopp->Settings->get('merchant_email').'>';
-				if($is_IIS) $email['to'] = $address;
-				else $email['to'] = '"'.html_entity_decode($addressee,ENT_QUOTES).'" <'.$address.'>';
-				$email['subject'] = __('Order Updated','Shopp');
-				$email['url'] = get_bloginfo('siteurl');
-				$email['sitename'] = get_bloginfo('name');
-
-				if ($_POST['receipt'] == "yes")
-					$email['receipt'] = $Purchase->receipt();
-
-				$email['status'] = strtoupper($labels[$Purchase->status]);
-				$email['message'] = wpautop(stripslashes($_POST['message']));
-
-				if (file_exists(SHOPP_TEMPLATES."/notification.html")) $template = SHOPP_TEMPLATES."/notification.html";
-				if (file_exists(SHOPP_TEMPLATES."/notify.php")) $template = SHOPP_TEMPLATES."/notify.php";
-
-				if (shopp_email($template,$email)) $mailsent = true;
-
+		if (isset($_POST['submit-shipments']) && isset($_POST['shipment']) && !empty($_POST['shipment'])) {
+			$shipments = $_POST['shipment'];
+			foreach ((array)$shipments as $shipment) {
+				shopp_add_order_event($Purchase->id,'shipped',array(
+					'tracking' => $shipment['tracking'],
+					'carrier' => $shipment['carrier']
+				));
 			}
+			$updated = __('Shipping notice sent.','Shopp');
 
-			$Purchase->save();
-			if ($mailsent) $updated = __('Order status updated & notification email sent.','Shopp');
-			else $updated = __('Order status updated.','Shopp');
+			unset($_POST['ship-notice']);
+			$Purchase->load_events();
 		}
 
-		$targets = $this->Settings->get('target_markets');
-		$UI->txnStatusLabels = Lookup::payment_status_labels();
-		$UI->statusLabels = $this->Settings->get('order_status');
+		if (isset($_POST['order-action']) && 'refund' == $_POST['order-action']) {
+			$user = wp_get_current_user();
+			$reason = (int)$_POST['reason'];
+			$amount = floatvalue($_POST['amount']);
+
+			if (!empty($_POST['message'])) {
+				$message = $_POST['message'];
+				$Purchase->message['note'] = $message;
+			}
+
+			if (!str_true($_POST['send'])) { // Force the order status
+				shopp_add_order_event($Purchase->id,'notice',array(
+					'user' => $user->ID,
+					'kind' => 'refunded',
+					'notice' => __('Marked Refunded','Shopp')
+				));
+				shopp_add_order_event($Purchase->id,'refunded',array(
+					'txnid' => $Purchase->txnid,
+					'gateway' => $Gateway->module,
+					'amount' => $amount
+				));
+				shopp_add_order_event($Purchase->id,'voided',array(
+					'txnorigin' => $Purchase->txnid,	// Original transaction ID (txnid of original Purchase record)
+					'txnid' => time(),					// Transaction ID for the VOID event
+					'gateway' => $Gateway->module		// Gateway handler name (module name from @subpackage)
+				));
+			} else {
+				shopp_add_order_event($Purchase->id,'refund',array(
+					'txnid' => $Purchase->txnid,
+					'gateway' => $Gateway->module,
+					'amount' => $amount,
+					'reason' => $reason,
+					'user' => $user->ID
+				));
+			}
+
+			if (!empty($_POST['message']))
+				$this->addnote($Purchase->id,$_POST['message']);
+
+			$Purchase->load_events();
+		}
+
+		if (isset($_POST['order-action']) && 'cancel' == $_POST['order-action']) {
+			// unset($_POST['refund-order']);
+			$user = wp_get_current_user();
+			$reason = (int)$_POST['reason'];
+
+			$message = '';
+			if (!empty($_POST['message'])) {
+				$message = $_POST['message'];
+				$Purchase->message['note'] = $message;
+			} else $message = 0;
+
+
+			if (!str_true($_POST['send'])) { // Force the order status
+				shopp_add_order_event($Purchase->id,'notice',array(
+					'user' => $user->ID,
+					'kind' => 'cancelled',
+					'notice' => __('Marked Cancelled','Shopp')
+				));
+				shopp_add_order_event($Purchase->id,'voided',array(
+					'txnorigin' => $Purchase->txnid,	// Original transaction ID (txnid of original Purchase record)
+					'txnid' => time(),			// Transaction ID for the VOID event
+					'gateway' => $Gateway->module		// Gateway handler name (module name from @subpackage)
+				));
+			} else {
+				shopp_add_order_event($Purchase->id,'void',array(
+					'txnid' => $Purchase->txnid,
+					'gateway' => $Gateway->module,
+					'reason' => $reason,
+					'user' => $user->ID,
+					'note' => $message
+				));
+			}
+
+			if (!empty($_POST['message']))
+				$this->addnote($Purchase->id,$_POST['message']);
+
+			$Purchase->load_events();
+		}
+
+		if (isset($_POST['charge']) && $Gateway && $Gateway->captures) {
+			$user = wp_get_current_user();
+
+			shopp_add_order_event($Purchase->id,'capture',array(
+				'txnid' => $Purchase->txnid,
+				'gateway' => $Purchase->gateway,
+				'amount' => $Purchase->capturable(),
+				'user' => $user->ID
+			));
+
+			$Purchase->load_events();
+		}
+
+		$base = shopp_setting('base_operations');
+		$targets = shopp_setting('target_markets');
+
+		$carriers_menu = $carriers_json = array();
+		$shipping_carriers = shopp_setting('shipping_carriers');
+		$shipcarriers = Lookup::shipcarriers();
+
+		if (empty($shipping_carriers)) {
+			$serviceareas = array('*',$base['country']);
+			foreach ($shipcarriers as $code => $carrier) {
+				if (!in_array($carrier->areas,$serviceareas)) continue;
+				$carriers_menu[$code] = $carrier->name;
+				$carriers_json[$code] = array($carrier->name,$carrier->trackpattern);
+			}
+		} else {
+			foreach ($shipping_carriers as $code) {
+				$carriers_menu[$code] = $shipcarriers[$code]->name;
+				$carriers_json[$code] = array($shipcarriers[$code]->name,$shipcarriers[$code]->trackpattern);
+			}
+		}
+		unset($carrierdata);
+
 		if (empty($statusLabels)) $statusLabels = array('');
 
 		include(SHOPP_ADMIN_PATH."/orders/order.php");
@@ -368,29 +518,43 @@ class Service extends AdminController {
 	 * @return void
 	 **/
 	function status_counts () {
-		$db = DB::get();
-
 		$table = DatabaseObject::tablename(Purchase::$table);
-		$labels = $this->Settings->get('order_status');
+		$labels = shopp_setting('order_status');
 
 		if (empty($labels)) return false;
 		$status = array();
 
-		$r = $db->query("SELECT status AS id,COUNT(status) AS total FROM $table GROUP BY status ORDER BY status ASC",AS_ARRAY);
+		$alltotal = DB::query("SELECT count(*) AS total FROM $table",'auto','col','total');
+		$r = DB::query("SELECT status,COUNT(status) AS total FROM $table GROUP BY status ORDER BY status ASC",'array','index','status');
+		$all = array('' => __('All Orders','Shopp'));
+
+		$labels = $all+$labels;
+
 		foreach ($labels as $id => $label) {
 			$_ = new StdClass();
 			$_->label = $label;
 			$_->id = $id;
 			$_->total = 0;
-			foreach ($r as $state) {
-				if ($state->id == $id) {
-					$_->total = (int)$state->total;	break;
-				}
-			}
+			if ( isset($r[ $id ]) ) $_->total = (int)$r[$id]->total;
+			if ('' === $id) $_->total = $alltotal;
 			$status[$id] = $_;
 		}
 
 		return $status;
+	}
+
+	function addnote ($order, $message, $sent = false) {
+		$user = wp_get_current_user();
+		$Note = new MetaObject();
+		$Note->parent = $order;
+		$Note->context = 'purchase';
+		$Note->type = 'order_note';
+		$Note->name = 'note';
+		$Note->value = new stdClass();
+		$Note->value->author = $user->ID;
+		$Note->value->message = $message;
+		$Note->value->sent = $sent;
+		$Note->save();
 	}
 
 } // END class Service

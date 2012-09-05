@@ -2,14 +2,15 @@
 
 	<div class="icon32"></div>
 	<h2><?php _e('Inventory','Shopp'); ?></h2>
-	<?php if (!empty($Shopp->Flow->Notice)): ?><div id="message" class="updated fade"><p><?php echo $Shopp->Flow->Notice; ?></p></div><?php endif; ?>
+
+	<?php do_action('shopp_admin_notice'); ?>
 
 	<form action="" method="get">
 	<?php include("navigation.php"); ?>
 
 	<div>
 		<input type="hidden" name="page" value="<?php echo $this->Admin->pagename('products'); ?>" />
-		<input type="hidden" name="f" value="i" />
+		<input type="hidden" name="view" value="<?php echo $this->view; ?>" />
 	</div>
 
 	<p id="post-search" class="search-box">
@@ -18,17 +19,16 @@
 	</p>
 
 	<div class="tablenav">
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+
 		<div class="alignleft actions filters">
-		<select name="cat" class="filters">
 		<?php echo $categories_menu; ?>
-		</select>
-		<select name="sl" class="filters">
 		<?php echo $inventory_menu; ?>
-		</select>
-		<input type="submit" id="filter-button" value="<?php _e('Filter','Shopp'); ?>" class="button-secondary">
+		<input type="submit" id="filter-button" value="<?php _e('Filter','Shopp'); ?>" class="button-secondary" />
 		</div>
-		<div class="clear"></div>
+
+		<?php $ListTable->pagination('top'); ?>
+
+		<br class="clear" />
 	</div>
 	</form>
 	<div class="clear"></div>
@@ -36,33 +36,32 @@
 	<form action="" method="post" id="inventory-manager">
 	<table class="widefat" cellspacing="0">
 		<thead>
-		<tr><?php print_column_headers('shopp_page_shopp-products'); ?></tr>
+		<tr><?php ShoppUI::print_column_headers('toplevel_page_shopp-products'); ?></tr>
 		</thead>
 		<tfoot>
-		<tr><?php print_column_headers('shopp_page_shopp-products',false); ?></tr>
+		<tr><?php ShoppUI::print_column_headers('toplevel_page_shopp-products',false); ?></tr>
 		</tfoot>
-	<?php if (sizeof($Products) > 0): ?>
+	<?php if ($Products->size() > 0): ?>
 		<tbody id="products" class="list products">
 		<?php
-		$hidden = get_hidden_columns('shopp_page_shopp-products');
+		$hidden = get_hidden_columns('toplevel_page_shopp-products');
 
 		$even = false;
 		foreach ($Products as $key => $Product):
 		$editurl = esc_url(esc_attr(add_query_arg(array_merge(stripslashes_deep($_GET),
 			array('page'=>'shopp-products',
-					'id'=>$Product->product,
+					'id'=>$Product->id,
 					'f'=>null)),
 					admin_url('admin.php'))));
 
 		$ProductName = empty($Product->name)?'('.__('no product name','Shopp').')':$Product->name;
-		if (!empty($Product->label) && $Product->optionkey > 0) $ProductName .= " ($Product->label)";
 		?>
 		<tr<?php if (!$even) echo " class='alternate'"; $even = !$even; ?>>
 			<td class="inventory column-inventory">
-			<input type="text" name="stock[<?php echo $Product->id; ?>]" value="<?php echo $Product->stock; ?>" size="6" class="stock selectall" />
-			<input type="hidden" name="db[<?php echo $Product->id; ?>]" value="<?php echo $Product->stock; ?>" class="db" />
+			<input type="text" name="stock[<?php echo $Product->stockid; ?>]" value="<?php echo $Product->stock; ?>" size="6" class="stock selectall" />
+			<input type="hidden" name="db[<?php echo $Product->stockid; ?>]" value="<?php echo $Product->stock; ?>" class="db" />
 			</td>
-			<td class="sku column-sku"><?php echo $Product->sku; ?></td>
+			<td class="sku column-sku<?php echo in_array('sku',$hidden)?' hidden':''; ?>"><?php echo $Product->sku; ?></td>
 			<td class="name column-name"><a class='row-title' href='<?php echo $editurl; ?>' title='<?php _e('Edit','Shopp'); ?> &quot;<?php echo $ProductName; ?>&quot;'><?php echo $ProductName; ?></a></td>
 
 		</tr>
@@ -74,8 +73,8 @@
 	</table>
 	</form>
 	<div class="tablenav">
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
-		<div class="clear"></div>
+		<?php $ListTable->pagination( 'bottom' ); ?>
+		<br class="clear" />
 	</div>
 </div>
 
@@ -106,7 +105,7 @@ jQuery(document).ready( function() {
 		});
 	});
 
-	pagenow = 'shopp_page_shopp-products';
+	pagenow = 'toplevel_page_shopp-products';
 	columns.init(pagenow);
 
 });

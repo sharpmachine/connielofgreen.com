@@ -15,7 +15,11 @@
 class OfflinePayment extends GatewayFramework implements GatewayModule {
 
 	var $secure = false;	// SSL not required
+	var $authonly = true;	// Auth only transactions
 	var $multi = true;		// Support multiple methods
+	var $captures = true;	// Supports Auth-only
+	var $refunds = true;	// Supports refunds
+
 	var $methods = array(); // List of active OfflinePayment payment methods
 
 	/**
@@ -28,7 +32,7 @@ class OfflinePayment extends GatewayFramework implements GatewayModule {
 	 **/
 	function __construct () {
 		parent::__construct();
-		$this->setup('instructions');
+		// $this->setup('instructions');
 
 		// Reset the index count to shift setting indices so we don't break the JS environment
 		if (isset($this->settings['label']) && is_array($this->settings['label']))
@@ -43,14 +47,17 @@ class OfflinePayment extends GatewayFramework implements GatewayModule {
 					$this->methods[$entry] = $this->settings['instructions'][$i];
 		}
 
-		add_filter('shopp_tag_checkout_offline-instructions',array(&$this,'tag_instructions'),10,2);
-		add_filter('shopp_payment_methods',array(&$this,'methods'));
+		add_filter('shopp_themeapi_checkout_offlineinstructions',array(&$this,'tag_instructions'),10,2);
+
+		add_action('shopp_offlinepayment_sale',array(&$this,'auth')); // Process sales as auth-only
+		add_action('shopp_offlinepayment_auth',array(&$this,'auth'));
+		add_action('shopp_offlinepayment_capture',array(&$this,'capture'));
+		add_action('shopp_offlinepayment_refund',array(&$this,'refund'));
+		add_action('shopp_offlinepayment_void',array(&$this,'void'));
+
 	}
 
-	function actions () {
-		add_action('shopp_process_order',array(&$this,'process'));
-		add_action('shopp_save_payment_settings',array(&$this,'reset'));
-	}
+	function actions () { /* Not Implemented */ }
 
 	/**
 	 * Process the order
@@ -62,9 +69,46 @@ class OfflinePayment extends GatewayFramework implements GatewayModule {
 	 *
 	 * @return void
 	 **/
-	function process () {
-		$this->Order->transaction($this->txnid());
-		return true;
+	function auth ($Event) {
+		$Order = $this->Order;
+		$OrderTotals = $Order->Cart->Totals;
+		$Billing = $Order->Billing;
+		$Paymethod = $Order->paymethod();
+
+		shopp_add_order_event($Event->order,'authed',array(
+			'txnid' => time(),
+			'amount' => $OrderTotals->total,
+			'fees' => 0,
+			'gateway' => $Paymethod->processor,
+			'paymethod' => $Paymethod->label,
+			'paytype' => $Billing->cardtype,
+			'payid' => $Billing->card
+		));
+	}
+
+	function capture ($Event) {
+		shopp_add_order_event($Event->order,'captured',array(
+			'txnid' => time(),			// Transaction ID of the CAPTURE event
+			'amount' => $Event->amount,	// Amount captured
+			'fees' => 0,
+			'gateway' => $this->module	// Gateway handler name (module name from @subpackage)
+		));
+	}
+
+	function refund ($Event) {
+		shopp_add_order_event($Event->order,'refunded',array(
+			'txnid' => time(),			// Transaction ID for the REFUND event
+			'amount' => $Event->amount,	// Amount refunded
+			'gateway' => $this->module	// Gateway handler name (module name from @subpackage)
+		));
+	}
+
+	function void ($Event) {
+		shopp_add_order_event($Event->order,'voided',array(
+			'txnorigin' => $Event->txnid,	// Original transaction ID (txnid of original Purchase record)
+			'txnid' => time(),				// Transaction ID for the VOID event
+			'gateway' => $this->module		// Gateway handler name (module name from @subpackage)
+		));
 	}
 
 	/**
@@ -94,33 +138,26 @@ class OfflinePayment extends GatewayFramework implements GatewayModule {
 	}
 
 	function tag_instructions ($result,$options) {
-		global $Shopp;
-		$methods = array_map('sanitize_title_with_dashes',$this->settings['label']);
-
-		$module = $Shopp->Order->processor;
-		$method = $Shopp->Order->paymethod;
-
-		if (empty($method) || !in_array($method,$methods) || $module != $this->module) return;
-
 		add_filter('shopp_offline_payment_instructions', 'stripslashes');
 		add_filter('shopp_offline_payment_instructions', 'wptexturize');
 		add_filter('shopp_offline_payment_instructions', 'convert_chars');
 		add_filter('shopp_offline_payment_instructions', 'wpautop');
 
-		$index = 0;
-		foreach ($methods as $index => $label) {
-			if ($method == $label)
-				return apply_filters('shopp_offline_payment_instructions',
-									$this->settings['instructions'][$index]);
-		}
+		$paymethod = shopp('purchase','get-paymethod');
+		$Order = ShoppOrder();
+		if ( ! isset($Order->payoptions[ $paymethod ]) ) return;
+
+		$method = $Order->payoptions[ $paymethod ]->setting;
+		list($module,$id) = explode('-',$method);
+
+		if ( ! isset($this->settings[$id]) ) return;
+
+		$settings = $this->settings[$id];
+
+		if(!empty($settings['instructions']))
+			return apply_filters('shopp_offline_payment_instructions', $settings['instructions']);
+
 		return false;
-	}
-
-	function reset () {
-		$Settings =& ShoppSettings();
-		if (!in_array($this->module,explode(',',$_POST['settings']['active_gateways'])))
-			$Settings->save('OfflinePayment',false);
-
 	}
 
 	function methods ($methods) {

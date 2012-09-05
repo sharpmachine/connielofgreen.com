@@ -25,27 +25,23 @@ class Login {
 	var $Billing = false;
 	var $Shipping = false;
 
-	var $accounts = "none";		// Account system setting
-
 	function __construct () {
-		global $Shopp;
 
-		$this->accounts = $Shopp->Settings->get('account_system');
+		$this->Customer =& ShoppOrder()->Customer;
+		$this->Billing =& ShoppOrder()->Billing;
+		$this->Shipping =& ShoppOrder()->Shipping;
 
-		$this->Customer =& $Shopp->Order->Customer;
-		$this->Billing =& $Shopp->Order->Billing;
-		$this->Shipping =& $Shopp->Order->Shipping;
 
-		add_action('shopp_logout',array(&$this,'logout'));
-
-		if ($this->accounts == "wordpress") {
-			add_action('set_logged_in_cookie',array(&$this,'wplogin'),10,4);
-			add_action('wp_logout',array(&$this,'logout'));
-			add_action('shopp_logout','wp_logout',1);
+		switch (shopp_setting('account_system')) {
+			case 'shopp':
+				add_action('shopp_logout',array($this,'logout'));
+				break;
+			case 'wordpress':
+				add_action('set_logged_in_cookie',array($this,'wplogin'),10,4);
+				add_action('wp_logout',array($this,'logout'));
+				add_action('shopp_logout','wp_logout',1);
+				break;
 		}
-
-		if (isset($_POST['shopp_registration']))
-			$this->registration();
 
 		$this->process();
 
@@ -60,21 +56,22 @@ class Login {
 	 * @return void
 	 **/
 	function process () {
-		global $Shopp;
 
-		if (isset($_GET['acct']) && $_GET['acct'] == "logout") {
-			// Redirect to remove the logout request
-			add_action('shopp_logged_out',array(&$this,'redirect'));
+		if (isset($_POST['shopp_registration'])) $this->registration();
+
+		if (isset($_REQUEST['acct']) && $_REQUEST['acct'] == "logout" || isset($_REQUEST['logout'])) {
+			// Set the last logged out action to save the session and redirect to remove the logout request
+			add_action('shopp_logged_out',array($this,'redirect'),100);
 			// Trigger the logout
 			do_action('shopp_logout');
 		}
 
-		if ("wordpress" == $this->accounts) {
+		if ("wordpress" == shopp_setting('account_system')) {
 			// See if the wordpress user is already logged in
 			$user = wp_get_current_user();
 
 			// Wordpress user logged in, but Shopp customer isn't
-			if (!empty($user->ID) && !$this->Customer->login) {
+			if (!empty($user->ID) && !$this->Customer->logged_in()) {
 				if ($Account = new Customer($user->ID,'wpuser')) {
 					$this->login($Account);
 					$this->Customer->wpuser = $user->ID;
@@ -83,15 +80,18 @@ class Login {
 			}
 		}
 
-		if (empty($_POST['process-login'])) return false;
-		if ($_POST['process-login'] != "true") return false;
-
-		// add_action('shopp_login',array(&$this,'redirect'));
+		if ( !isset($_POST['submit-login']) ) return false;
 
 		// Prevent checkout form from processing
 		remove_all_actions('shopp_process_checkout');
 
-		switch ($this->accounts) {
+		switch (shopp_setting('account_system')) {
+			case "shopp":
+				$mode = "loginname";
+				if (!empty($_POST['account-login']) && strpos($_POST['account-login'],'@') !== false)
+					$mode = "email";
+				$this->auth($_POST['account-login'],$_POST['password-login'],$mode);
+				break;
 			case "wordpress":
 				if (!empty($_POST['account-login'])) {
 					if (strpos($_POST['account-login'],'@') !== false) $mode = "email";
@@ -104,12 +104,6 @@ class Login {
 				if ($loginname) {
 					$this->auth($loginname,$_POST['password-login'],$mode);
 				}
-				break;
-			case "shopp":
-				$mode = "loginname";
-				if (!empty($_POST['account-login']) && strpos($_POST['account-login'],'@') !== false)
-					$mode = "email";
-				$this->auth($_POST['account-login'],$_POST['password-login'],$mode);
 				break;
 		}
 
@@ -127,50 +121,60 @@ class Login {
 	 * @return void
 	 **/
 	function auth ($id,$password,$type='email') {
-		global $Shopp;
 
-		$db = DB::get();
-		switch($this->accounts) {
-			case "shopp":
+		$errors = array(
+			'empty_username' => __('The login field is empty.','Shopp'),
+			'empty_password' => __('The password field is empty.','Shopp'),
+			'invalid_email' => __('No customer account was found with that email.','Shopp'),
+			'invalid_username' => __('No customer account was found with that login.','Shopp'),
+			'incorrect_password' => __('The password is incorrect.','Shopp')
+		);
+
+		switch(shopp_setting('account_system')) {
+			case 'shopp':
 				$Account = new Customer($id,'email');
 
 				if (empty($Account)) {
-					new ShoppError(__("No customer account was found with that email.","Shopp"),'invalid_account',SHOPP_AUTH_ERR);
-					return false;
+					new ShoppError( $errors['invalid_email'],'invalid_account',SHOPP_AUTH_ERR );
+					return;
 				}
 
 				if (!wp_check_password($password,$Account->password)) {
-					new ShoppError(__("The password is incorrect.","Shopp"),'invalid_password',SHOPP_AUTH_ERR);
-					return false;
+					new ShoppError( $errors['incorrect_password'],'incorrect_password',SHOPP_AUTH_ERR );
+					return;
 				}
 
 				break;
 
-  		case "wordpress":
-			if($type == 'email'){
+  		case 'wordpress':
+			if('email' == $type){
 				$user = get_user_by_email($id);
 				if ($user) $loginname = $user->user_login;
 				else {
-					new ShoppError(__("No customer account was found with that email.","Shopp"),'invalid_account',SHOPP_AUTH_ERR);
-					return false;
+					new ShoppError( $errors['invalid_email'],'invalid_account',SHOPP_AUTH_ERR );
+					return;
 				}
 			} else $loginname = $id;
+
 			$user = wp_authenticate($loginname,$password);
-			if (!is_wp_error($user)) {
+			if (is_wp_error($user)) { // WordPress User Authentication failed
+				$code = $user->get_error_code();
+				if ( isset($errors[ $code ]) ) new ShoppError( $errors[ $code ],'invalid_account',SHOPP_AUTH_ERR );
+				else {
+					$messages = $user->get_error_messages();
+					foreach ($messages as $message)
+						new ShoppError( sprintf(__('Unknown login error: %s'),$message),'unknown_login_error',SHOPP_AUTH_ERR);
+				}
+				return;
+			} else {
 				wp_set_auth_cookie($user->ID);
 				do_action('wp_login', $loginname);
 				wp_set_current_user($user->ID,$user->user_login);
 
-				return true;
-			} else { // WordPress User Authentication failed
-				$_e = $user->get_error_code();
-				if($_e == 'invalid_username') new ShoppError(__("No customer account was found with that login.","Shopp"),'invalid_account',SHOPP_AUTH_ERR);
-				else if($_e == 'incorrect_password') new ShoppError(__("The password is incorrect.","Shopp"),'invalid_password',SHOPP_AUTH_ERR);
-				else new ShoppError(__('Unknown login error: ').$_e,false,SHOPP_AUTH_ERR);
-				return false;
+				return;
 			}
   			break;
-			default: return false;
+			default: return;
 		}
 
 		$this->login($Account);
@@ -206,7 +210,7 @@ class Login {
 	 * @return void
 	 **/
 	function login ($Account) {
-		global $Shopp;
+		if ($this->Customer->login) return; // Prevent login pong (Shopp login <-> WP login)
 		$this->Customer->copydata($Account,"",array());
 		$this->Customer->login = true;
 		unset($this->Customer->password);
@@ -218,6 +222,14 @@ class Login {
 		$this->Shipping->load($Account->id,'customer');
 		if (empty($this->Shipping->id))
 			$this->Shipping->copydata($this->Billing);
+
+		// Login WP user if not logged in
+		if ('wordpress' == shopp_setting('account_system') && !get_current_user_id()) {
+			$user = get_user_by('id',$this->Customer->wpuser);
+			@wp_set_auth_cookie($user->ID);
+			wp_set_current_user($user->ID,$user->user_login);
+		}
+
 		do_action_ref_array('shopp_login',array(&$this->Customer));
 	}
 
@@ -230,14 +242,12 @@ class Login {
 	 * @return void
 	 **/
 	function logout () {
-		$this->Customer->login = false;
-		$this->Customer->wpuser = false;
-		$this->Customer->id = false;
-		$this->Billing->id = false;
-		$this->Billing->customer = false;
-		$this->Shipping->id = false;
-		$this->Shipping->customer = false;
-		session_commit();
+		if ('none' == shopp_setting('account_system')) return;
+		$this->Customer = new Customer();
+		$this->Billing = new BillingAddress();
+		$this->Shipping = new ShippingAddress();
+		$this->Shipping->locate();
+
 		do_action_ref_array('shopp_logged_out',array(&$this->Customer));
 	}
 
@@ -246,27 +256,29 @@ class Login {
 
 		if (isset($_POST['info'])) $this->Customer->info = stripslashes_deep($_POST['info']);
 
+		$_POST = apply_filters('shopp_customer_registration',$_POST);
+
 		$this->Customer = new Customer();
 		$this->Customer->updates($_POST);
 
 		if (isset($_POST['confirm-password']))
 			$this->Customer->confirm_password = $_POST['confirm-password'];
 
-		$this->Billing = new Billing();
+		$this->Billing = new BillingAddress();
 		if (isset($_POST['billing']))
 			$this->Billing->updates($_POST['billing']);
 
-		$this->Shipping = new Shipping();
+		$this->Shipping = new ShippingAddress();
 		if (isset($_POST['shipping']))
 			$this->Shipping->updates($_POST['shipping']);
 
 		// Override posted shipping updates with billing address
-		if ($_POST['sameshipaddress'] == "on")
+		if (str_true($_POST['sameshipaddress']))
 			$this->Shipping->updates($this->Billing,
 				array("_datatypes","_table","_key","_lists","id","created","modified"));
 
 		// WordPress account integration used, customer has no wp user
-		if ("wordpress" == $this->accounts && empty($this->Customer->wpuser)) {
+		if ("wordpress" == shopp_setting('account_system') && empty($this->Customer->wpuser)) {
 			if ( $wpuser = get_current_user_id() ) $this->Customer->wpuser = $wpuser; // use logged in WordPress account
 			else $this->Customer->create_wpuser(); // not logged in, create new account
 		}
@@ -289,6 +301,8 @@ class Login {
 			$this->Shipping->save();
 		}
 
+		do_action('shopp_customer_registered',$this->Customer);
+
 		if (!empty($this->Customer->id)) $this->login($this->Customer);
 
 		shopp_redirect(shoppurl(false,'account'));
@@ -296,6 +310,7 @@ class Login {
 
 	function redirect () {
 		global $Shopp;
+		session_commit(); // Save the session just prior to redirect
 		if (!empty($_POST['redirect'])) {
 			if ($_POST['redirect'] == "checkout") shopp_redirect(shoppurl(false,'checkout',$Shopp->Gateways->secure));
 			else shopp_safe_redirect($_POST['redirect']);

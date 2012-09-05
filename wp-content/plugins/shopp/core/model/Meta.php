@@ -35,7 +35,45 @@ class MetaObject extends DatabaseObject {
 	 **/
 	function __construct ($id=false,$key='id') {
 		$this->init(self::$table);
-		$this->load($id,$key);
+		if (!$id) return;
+		if (is_array($id)) $this->load($id);
+		else $this->load(array($key=>$id,'type'=>$this->type));
+
+		if (!empty($this->id) && !empty($this->_xcols))
+			$this->expopulate();
+	}
+
+	/**
+	 * Populate extended fields loaded from the MetaObject
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @return void
+	 **/
+	function expopulate () {
+		if (!is_object($this->value)) return;
+		$properties = $this->value;
+		$this->copydata($properties);
+		unset($this->value);
+	}
+
+	/**
+	 * Save the object back to the database
+	 *
+	 * @author Jonathan Davis
+	 * @since 1.1
+	 *
+	 * @return void
+	 **/
+	function save () {
+		if (!empty($this->_xcols)) {
+			$value = new stdClass();
+			foreach ((array)$this->_xcols as $col)
+				$value->{$col} = $this->{$col};
+			$this->value = $value;
+		}
+		parent::save();
 	}
 
 } // END class Meta
@@ -51,10 +89,10 @@ class MetaObject extends DatabaseObject {
  * @subpackage meta
  **/
 abstract class MetasetObject extends DatabaseObject {
-	static $table = "meta";
+	static $table = 'meta';
 
 	var $_table = false;	// Fully qualified table name
-	var $_loaded = false;	// If he record is successfully loaded
+	var $_loaded = false;	// If the record is successfully loaded
 	var $_meta = array();	// The meta record definitions
 	var $_context = 'meta';	// The meta context
 	var $_parent = 0;		// Linking reference to the root record
@@ -67,14 +105,14 @@ abstract class MetasetObject extends DatabaseObject {
 		$this->load($id,$key);
 	}
 
-	function init () {
+	function init ($table,$key='id') {
 		$this->_table = DatabaseObject::tablename(MetasetObject::$table);
 		$this->_type = get_class($this);
 		$properties = array_keys(get_object_vars($this));
 		$this->_properties = array_filter($properties,array('MetasetObject','_ignore_'));
 	}
 
-	function load () {
+	function load ($arg1=false,$arg2=false) {
 		$db = &DB::get();
 
 		$args = func_get_args();
@@ -112,7 +150,7 @@ abstract class MetasetObject extends DatabaseObject {
 	 *
 	 * @return void Description...
 	 **/
-	function save () {
+	function save ($op='update') {
 		$db = &DB::get();
 
 		if (empty($this->id)) {

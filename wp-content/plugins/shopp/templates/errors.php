@@ -10,9 +10,9 @@
  **
  **/
 ?>
-<div id="errors" class="shopp">
+<div class="shopp shopp-errors">
 	<h3><?php _e('Errors','Shopp'); ?></h3>
 	<ul>
-		<?php shopp('checkout','errors'); ?>
+		<?php shopp('storefront','errors'); ?>
 	</ul>
 </div>

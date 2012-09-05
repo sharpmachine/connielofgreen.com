@@ -97,8 +97,8 @@
 #shopp form.product ul { width: auto; }
 #shopp ul.variations label { display: block; }
 #shopp dl { overflow: hidden; }
-#shopp dl dt { font-weight: bold; float: left; margin-right: 10px; clear: left;  }
-#shopp dl dd { display: block; clear: right; }
+#shopp dt { clear:left; float:left; text-align: right; width:50%; margin-right: 1em; }
+#shopp dd { clear:right; width:50%; padding-left: 50%; }
 
 #shopp .gallery { margin: 5px 10px 5px 0; }
 #shopp .gallery ul.previews li.thumbnails ul { margin: 10px 0 10px 0; }
@@ -163,9 +163,11 @@ ul.shopp_categories li ul.active { display: block; }
 #shopp #shipping-methods li { margin-top: 5px; }
 #shopp #shipping-methods input { margin-left: -16px; }
 
-#shopp #errors { color: #990000; }
+#shopp .shopp-errors { color: #990000; }
 #shopp input.error { background: #ffdddd; }
 #shopp label.error { color: #990000; font-weight: bold; }
+
+.clickwrap-terms { overflow: auto; height: 200px; border: 1px solid #333; padding: 0.5em; margin-bottom: 1em; }
 
 /**
  * Order Receipt

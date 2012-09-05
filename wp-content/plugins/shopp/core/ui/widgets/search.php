@@ -13,22 +13,21 @@ if ( class_exists('WP_Widget') && ! class_exists('ShoppSearchWidget') ) {
 
 class ShoppSearchWidget extends WP_Widget {
 
-    function ShoppSearchWidget() {
-        parent::WP_Widget(false,
-			$name = __('Shopp Search','Shopp'),
-			array('description' => __('A search form for your store','Shopp'))
-		);
+    function __construct () {
+        parent::__construct(
+		'shopp-search',
+		__('Shopp Search','Shopp'),
+		array('description' => __('A search form for your store','Shopp')));
     }
 
     function widget($args, $options) {
-		require_once(SHOPP_MODEL_PATH."/XML.php");
 		global $Shopp;
 		if (!empty($args)) extract($args);
 
 		if (empty($options['title'])) $options['title'] = __('Shop Search','Shopp');
 		$title = $before_title.$options['title'].$after_title;
 
-		$content = $Shopp->Catalog->tag('searchform');
+		$content = shopp('catalog','get-searchform');
 		echo $before_widget.$title.$content.$after_widget;
     }
 

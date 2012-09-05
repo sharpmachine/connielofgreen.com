@@ -2,11 +2,12 @@
 	<div class="icon32"></div>
 	<h2><?php _e('Orders','Shopp'); ?></h2>
 
+	<?php do_action('shopp_admin_notices'); ?>
+
 	<form action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>" id="orders" method="get">
 	<?php include("navigation.php"); ?>
 	<div>
 		<input type="hidden" name="page" value="<?php echo $page; ?>" />
-		<input type="hidden" name="status" value="<?php echo $status; ?>" />
 	</div>
 	<div class="clear"></div>
 
@@ -34,7 +35,7 @@
 				<select name="range" id="range">
 					<?php echo menuoptions($ranges,$range,true); ?>
 				</select>
-				<div id="dates">
+				<div id="dates" class="hide-if-js">
 					<div id="start-position" class="calendar-wrap"><input type="text" id="start" name="start" value="<?php echo $startdate; ?>" size="10" class="search-input selectall" /></div>
 					<small>to</small>
 					<div id="end-position" class="calendar-wrap"><input type="text" id="end" name="end" value="<?php echo $enddate; ?>" size="10" class="search-input selectall" /></div>
@@ -42,7 +43,9 @@
 				<button type="submit" id="filter-button" name="filter" value="order" class="button-secondary"><?php _e('Filter','Shopp'); ?></button>
 			</div>
 			</div>
-			<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+
+			<?php $ListTable->pagination('top'); ?>
+
 		<div class="clear"></div>
 	</div>
 	<div class="clear"></div>
@@ -54,19 +57,36 @@
 		<tfoot>
 		<tr><?php print_column_headers('toplevel_page_shopp-orders',false); ?></tr>
 		</tfoot>
-	<?php if (sizeof($Orders) > 0): ?>
+	<?php if (count($Orders) > 0): ?>
 		<tbody id="orders-table" class="list orders">
 		<?php
 			$hidden = get_hidden_columns('toplevel_page_shopp-orders');
+
+			$url = add_query_arg('page','shopp-orders', admin_url('admin.php') );
 
 			$even = false; foreach ($Orders as $Order):
 
 			$classes = array();
 
-			$txnstatus = $Order->txnstatus;
-			if (array_key_exists($Order->txnstatus,$txnStatusLabels)) $txnstatus = $txnStatusLabels[$Order->txnstatus];
-			if (empty($txnstatus)) $txnstatus = "UNKNOWN";
-			$classes[] = strtolower(preg_replace('/[^\w]/','_',$txnstatus));
+			$viewurl = add_query_arg('id',$Order->id,$url);
+			$customer = '' == trim($Order->firstname.$Order->lastname) ? "(".__('no contact name','Shopp').")" : ucfirst("{$Order->firstname} {$Order->lastname}");
+			$customerurl = add_query_arg('customer',$Order->customer,$url);
+
+			$txnstatus = isset($txnstatus_labels[$Order->txnstatus]) ? $txnstatus_labels[$Order->txnstatus] : $Order->txnstatus;
+			$classes[] = strtolower(preg_replace('/[^\w]/','_',$Order->txnstatus));
+			$gateway = $Gateways[$Order->gateway]->name;
+
+
+			$addrfields = array('city','state','country');
+			$format = '%3$s, %2$s &mdash; %1$s';
+			if (empty($Order->shipaddress))
+				$location = sprintf($format,$Order->country,$Order->state,$Order->city);
+			else $location = sprintf($format,$Order->shipcountry,$Order->shipstate,$Order->shipcity);
+
+			$location = ltrim($location,' ,');
+			if (0 === strpos($location,'&mdash;'))
+				$location = str_replace('&mdash; ','',$location);
+			$location = str_replace(',  &mdash;',' &mdash;',$location);
 
 			if (!$even) $classes[] = "alternate";
 			do_action_ref_array('shopp_order_row_css',array(&$classes,&$Order));
@@ -74,28 +94,21 @@
 			?>
 		<tr class="<?php echo join(' ',$classes); ?>">
 			<th scope='row' class='check-column'><input type='checkbox' name='selected[]' value='<?php echo $Order->id; ?>' /></th>
-			<td class="order column-order<?php echo in_array('order',$hidden)?' hidden':''; ?>"><?php echo $Order->id; ?></td>
-			<td class="name column-name"><a class='row-title' href='<?php echo esc_url(add_query_arg(array('page'=>'shopp-orders','id'=>$Order->id),admin_url('admin.php'))); ?>' title='<?php _e('View','Shopp'); ?> &quot;<?php echo $Order->id; ?>&quot;'><?php echo esc_html(empty($Order->firstname) && empty($Order->lastname))?"(".__('no contact name','Shopp').")":"{$Order->firstname} {$Order->lastname}"; ?></a><?php echo !empty($Order->company)?"<br />".esc_html($Order->company):""; ?></td>
-			<td class="destination column-destination<?php echo in_array('destination',$hidden)?' hidden':''; ?>"><?php
-				$location = '';
-				$location = $Order->shipcity;
-				if (!empty($location) && !empty($Order->shipstate)) $location .= ', ';
-				$location .= $Order->shipstate;
-				if (!empty($location) && !empty($Order->shipcountry))
-					$location .= ' &mdash; ';
-				$location .= $Order->shipcountry;
-				echo esc_html($location);
-				if (isset($Order->downloads)) echo (!empty($location)?'<br />':'').__('Downloads','Shopp');
-				?></td>
-			<td class="txn column-txn<?php echo in_array('txn',$hidden)?' hidden':''; ?>"><?php echo $Order->txnid; ?><br /><strong><?php echo $Order->gateway; ?></strong> &mdash; <?php echo $txnstatus; ?></td>
+			<td class="order column-order<?php echo in_array('order',$hidden)?' hidden':''; ?>"><a class='row-title' href='<?php echo esc_url($viewurl); ?>' title='<?php printf(__('View Order #%d','Shopp'),$Order->id); ?>'><?php printf(__('Order #%d','Shopp'),$Order->id); ?></a></td>
+			<td class="name column-name"><a href="<?php echo esc_url($customerurl); ?>"><?php echo esc_html($customer); ?></a><?php echo !empty($Order->company)?"<br />".esc_html($Order->company):""; ?></td>
+			<td class="destination column-destination<?php echo in_array('destination',$hidden)?' hidden':''; ?>"><?php echo esc_html($location); ?></td>
+			<td class="txn column-txn<?php echo in_array('txn',$hidden)?' hidden':''; ?>"><?php echo $Order->txnid; ?><br /><?php echo esc_html($gateway); ?></td>
 			<td class="date column-date<?php echo in_array('date',$hidden)?' hidden':''; ?>"><?php echo date("Y/m/d",mktimestamp($Order->created)); ?><br />
 				<strong><?php echo $statusLabels[$Order->status]; ?></strong></td>
-			<td class="total column-total<?php echo in_array('total',$hidden)?' hidden':''; ?>"><?php echo money($Order->total); ?></td>
+			<td class="total column-total<?php echo in_array('total',$hidden)?' hidden':''; ?>"><?php echo money($Order->total); ?><br /><span class="status"><?php echo $txnstatus; ?></span></td>
 		</tr>
 		<?php endforeach; ?>
 		</tbody>
 	<?php else: ?>
-		<tbody><tr><td colspan="6"><?php _e('No','Shopp'); ?><?php if (!empty($_GET['status'])) echo ' '.strtolower($statusLabels[$_GET['status']]); ?> <?php _e('orders, yet.','Shopp'); ?></td></tr></tbody>
+		<tbody><tr><td colspan="7"><?php
+		printf(__('No %s orders yet.','Shopp'),(
+			isset($_GET['status'],$statusLabels[$_GET['status']]) ? strtolower($statusLabels[$_GET['status']]) : ''
+		)); ?></td></tr></tbody>
 	<?php endif; ?>
 	</table>
 
@@ -104,7 +117,7 @@
 	<div class="tablenav">
 		<?php if (current_user_can('shopp_financials') && current_user_can('shopp_export_orders')): ?>
 		<div class="alignleft actions">
-			<form action="<?php echo esc_url(add_query_arg(array_merge($_GET,array('src'=>'export_purchases')),admin_url("admin.php"))); ?>" id="log" method="post">
+			<form action="<?php echo esc_url( add_query_arg(urlencode_deep(array_merge(stripslashes_deep($_GET),array('src'=>'export_purchases'))),admin_url('admin.php')) ); ?>" id="log" method="post">
 			<button type="button" id="export-settings-button" name="export-settings" class="button-secondary"><?php _e('Export Options','Shopp'); ?></button>
 			<div id="export-settings" class="hidden">
 			<div id="export-columns" class="multiple-select">
@@ -124,21 +137,20 @@
 				<?php echo menuoptions($exports,$formatPref,true); ?>
 			</select>
 			</div>
-			<button type="submit" id="download-button" name="download" value="export" class="button-secondary"><?php _e('Download','Shopp'); ?></button>
+			<button type="submit" id="download-button" name="download" value="export" class="button-secondary"<?php if (count($Orders) < 1) echo ' disabled="disabled"'; ?>><?php _e('Download','Shopp'); ?></button>
 			<div class="clear"></div>
 			</form>
 		</div>
 		<?php endif; ?>
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+
+		<?php $ListTable->pagination('bottom'); ?>
+
 		<div class="clear"></div>
 	</div>
 </div>
 
-<div id="start-calendar" class="calendar"></div>
-<div id="end-calendar" class="calendar"></div>
-
 <script type="text/javascript">
-var lastexport = new Date(<?php echo date("Y,(n-1),j",$Shopp->Settings->get('purchaselog_lastexport')); ?>);
+var lastexport = new Date(<?php echo date("Y,(n-1),j",shopp_setting('purchaselog_lastexport')); ?>);
 
 jQuery(document).ready( function() {
 var $=jqnc();
@@ -178,14 +190,14 @@ function formatDate (e) {
 
 var range = $('#range'),
 	start = $('#start').change(formatDate),
-	StartCalendar = $('#start-calendar').PopupCalendar({
+	StartCalendar = $('<div id="start-calendar" class="calendar"></div>').appendTo('#wpwrap').PopupCalendar({
 		scheduling:false,
 		input:start
 	}).bind('calendarSelect',function () {
 		range.val('custom');
 	}),
 	end = $('#end').change(formatDate),
-	EndCalendar = $('#end-calendar').PopupCalendar({
+	EndCalendar = $('<div id="end-calendar" class="calendar"></div>').appendTo('#wpwrap').PopupCalendar({
 		scheduling:true,
 		input:end,
 		scheduleAfter:StartCalendar
@@ -196,9 +208,9 @@ var range = $('#range'),
 range.change(function () {
 	if (this.selectedIndex == 0) {
 		start.val(''); end.val('');
-		$('#dates').addClass('hidden');
+		$('#dates').hide();
 		return;
-	} else $('#dates').removeClass('hidden');
+	} else $('#dates').show();
 	var today = new Date(),
 		startdate = new Date(today.getFullYear(),today.getMonth(),today.getDate()),
 		enddate = new Date(today.getFullYear(),today.getMonth(),today.getDate());
@@ -265,6 +277,7 @@ $('#selectall_columns').change(function () {
 	if ($(this).attr('checked')) $('#export-columns input').not(this).attr('checked',true);
 	else $('#export-columns input').not(this).attr('checked',false);
 });
+$('input.current-page').unbind('mouseup.select').bind('mouseup.select',function () { this.select(); });
 
 });
 

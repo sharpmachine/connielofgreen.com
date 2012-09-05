@@ -13,6 +13,8 @@
 
 class Account extends AdminController {
 
+	var $screen = 'shopp_page_shopp-customers';
+
 	/**
 	 * Account constructor
 	 *
@@ -23,6 +25,8 @@ class Account extends AdminController {
 		parent::__construct();
 		if (!empty($_GET['id'])) {
 			wp_enqueue_script('postbox');
+			wp_enqueue_script('password-strength-meter');
+			shopp_enqueue_script('suggest');
 			shopp_enqueue_script('colorbox');
 			do_action('shopp_customer_editor_scripts');
 			add_action('admin_head',array(&$this,'layout'));
@@ -51,8 +55,7 @@ class Account extends AdminController {
 	 * @return void
 	 **/
 	function customers () {
-		global $Shopp,$Customers,$wpdb;
-		$db = DB::get();
+		global $wpdb;
 
 		$defaults = array(
 			'page' => false,
@@ -61,7 +64,8 @@ class Account extends AdminController {
 			'update' => false,
 			'newstatus' => false,
 			'pagenum' => 1,
-			'per_page' => false,
+			'paged' => false,
+			'per_page' => 20,
 			'start' => '',
 			'end' => '',
 			'status' => false,
@@ -81,24 +85,39 @@ class Account extends AdminController {
 				&& current_user_can('shopp_delete_customers')) {
 			foreach($selected as $deletion) {
 				$Customer = new Customer($deletion);
-				$Billing = new Billing($Customer->id,'customer');
+				$Billing = new BillingAddress($Customer->id);
 				$Billing->delete();
-				$Shipping = new Shipping($Customer->id,'customer');
+				$Shipping = new ShippingAddress($Customer->id);
 				$Shipping->delete();
 				$Customer->delete();
 			}
 		}
 
+		$updated = false;
 		if (!empty($_POST['save'])) {
 			check_admin_referer('shopp-save-customer');
 
 			if ($_POST['id'] != "new") {
 				$Customer = new Customer($_POST['id']);
-				$Billing = new Billing($Customer->id,'customer');
-				$Shipping = new Shipping($Customer->id,'customer');
+				$Billing = new BillingAddress($Customer->id);
+				$Shipping = new ShippingAddress($Customer->id);
 			} else $Customer = new Customer();
 
+			if (!empty($Customer->wpuser)) $user = get_user_by('id',$Customer->wpuser);
+
 			$Customer->updates($_POST);
+
+			// Reassign WordPress login
+			if ('wordpress' == shopp_setting('account_system') && !empty($_POST['userlogin']) && $_POST['userlogin'] !=  $user->user_login) {
+				$newlogin = get_user_by('login',$_POST['userlogin']);
+				if (!empty($newlogin->ID)) {
+					if (DB::query("SELECT count(*) AS used FROM $Customer->_table WHERE wpuser=$newlogin->ID",'auto','col','used') == 0) {
+						$Customer->wpuser = $newlogin->ID;
+						$updated = sprintf(__('Updated customer login to %s.','Shopp'),"<strong>$newlogin->user_login</strong>");
+					} else $updated = sprintf(__('Could not update customer login to "%s" because that user is already assigned to another customer.','Shopp'),'<strong>'.sanitize_user($_POST['userlogin']).'</strong>');
+
+				} else $updated = sprintf(__('Could not update customer login to "%s" because the user does not exist in WordPress.','Shopp'),'<strong>'.sanitize_user($_POST['userlogin']).'</strong>');
+			}
 
 			if (!empty($_POST['new-password']) && !empty($_POST['confirm-password'])
 				&& $_POST['new-password'] == $_POST['confirm-password']) {
@@ -109,10 +128,12 @@ class Account extends AdminController {
 			$Customer->info = false; // No longer used from DB
 			$Customer->save();
 
-			foreach ($_POST['info'] as $id => $info) {
-				$Meta = new MetaObject($id);
-				$Meta->value = $info;
-				$Meta->save();
+			if (isset($_POST['info']) && !empty($_POST['info'])) {
+				foreach ((array)$_POST['info'] as $id => $info) {
+					$Meta = new MetaObject($id);
+					$Meta->value = $info;
+					$Meta->save();
+				}
 			}
 
 			if (isset($Customer->id)) $Billing->customer = $Customer->id;
@@ -122,10 +143,12 @@ class Account extends AdminController {
 			if (isset($Customer->id)) $Shipping->customer = $Customer->id;
 			$Shipping->updates($_POST['shipping']);
 			$Shipping->save();
+			if (!$updated) __('Customer updated.','Shopp');
+			$Customer = false;
 
 		}
 
-		$pagenum = absint( $pagenum );
+		$pagenum = absint( $paged );
 		if ( empty($pagenum) )
 			$pagenum = 1;
 		if( !$per_page || $per_page < 0 )
@@ -144,47 +167,66 @@ class Account extends AdminController {
 		}
 
 		$customer_table = DatabaseObject::tablename(Customer::$table);
-		$billing_table = DatabaseObject::tablename(Billing::$table);
+		$billing_table = DatabaseObject::tablename(BillingAddress::$table);
 		$purchase_table = DatabaseObject::tablename(Purchase::$table);
 		$users_table = $wpdb->users;
 
-		$where = '';
+		$where = array();
 		if (!empty($s)) {
 			$s = stripslashes($s);
 			if (preg_match_all('/(\w+?)\:(?="(.+?)"|(.+?)\b)/',$s,$props,PREG_SET_ORDER)) {
 				foreach ($props as $search) {
 					$keyword = !empty($search[2])?$search[2]:$search[3];
 					switch(strtolower($search[1])) {
-						case "company": $where .= ((empty($where))?"WHERE ":" AND ")."c.company LIKE '%$keyword%'"; break;
-						case "login": $where .= ((empty($where))?"WHERE ":" AND ")."u.user_login LIKE '%$keyword%'"; break;
-						case "address": $where .= ((empty($where))?"WHERE ":" AND ")."(b.address LIKE '%$keyword%' OR b.xaddress='%$keyword%')"; break;
-						case "city": $where .= ((empty($where))?"WHERE ":" AND ")."b.city LIKE '%$keyword%'"; break;
+						case "company": $where[] = "c.company LIKE '%$keyword%'"; break;
+						case "login": $where[] = "u.user_login LIKE '%$keyword%'"; break;
+						case "address": $where[] = "(b.address LIKE '%$keyword%' OR b.xaddress='%$keyword%')"; break;
+						case "city": $where[] = "b.city LIKE '%$keyword%'"; break;
 						case "province":
-						case "state": $where .= ((empty($where))?"WHERE ":" AND ")."b.state='$keyword'"; break;
+						case "state": $where[] = "b.state='$keyword'"; break;
 						case "zip":
 						case "zipcode":
-						case "postcode": $where .= ((empty($where))?"WHERE ":" AND ")."b.postcode='$keyword'"; break;
-						case "country": $where .= ((empty($where))?"WHERE ":" AND ")."b.country='$keyword'"; break;
+						case "postcode": $where[] = "b.postcode='$keyword'"; break;
+						case "country": $where[] = "b.country='$keyword'"; break;
 					}
 				}
 			} elseif (strpos($s,'@') !== false) {
-				 $where .= ((empty($where))?"WHERE ":" AND ")."c.email='$s'";
-			} else $where .= ((empty($where))?"WHERE ":" AND ")." (c.id='$s' OR CONCAT(c.firstname,' ',c.lastname) LIKE '%$s%' OR c.company LIKE '%$s%')";
+				 $where[] = "c.email='$s'";
+			} elseif (is_numeric($s)) {
+				$where[] = "c.id='$s'";
+			} else $where[] = "(CONCAT(c.firstname,' ',c.lastname) LIKE '%$s%' OR c.company LIKE '%$s%')";
 
 		}
-		if (!empty($starts) && !empty($ends)) $where .= ((empty($where))?"WHERE ":" AND ").' (UNIX_TIMESTAMP(c.created) >= '.$starts.' AND UNIX_TIMESTAMP(c.created) <= '.$ends.')';
+		if (!empty($starts) && !empty($ends)) $where[] = ' (UNIX_TIMESTAMP(c.created) >= '.$starts.' AND UNIX_TIMESTAMP(c.created) <= '.$ends.')';
 
-		$customercount = $db->query("SELECT count(*) as total FROM $customer_table AS c $where");
-		$query = "SELECT c.*,b.city,b.state,b.country, u.user_login, SUM(p.total) AS total,count(distinct p.id) AS orders FROM $customer_table AS c LEFT JOIN $purchase_table AS p ON p.customer=c.id LEFT JOIN $billing_table AS b ON b.customer=c.id LEFT JOIN $users_table AS u ON u.ID=c.wpuser AND (c.wpuser IS NULL OR c.wpuser !=0) $where GROUP BY c.id ORDER BY c.created DESC LIMIT $index,$per_page";
-		$Customers = $db->query($query,AS_ARRAY);
+		$select = array(
+			'columns' => 'SQL_CALC_FOUND_ROWS c.*,city,state,country,user_login',
+			'table' => "$customer_table as c",
+			'joins' => array(
+					$billing_table => "LEFT JOIN $billing_table AS b ON b.customer=c.id AND b.type='billing'",
+					$users_table => "LEFT JOIN $users_table AS u ON u.ID=c.wpuser AND (c.wpuser IS NULL OR c.wpuser != 0)"
+				),
+			'where' => $where,
+			'groupby' => "c.id",
+			'orderby' => "c.created DESC",
+			'limit' => "$index,$per_page"
+		);
+		$query = DB::select($select);
+		$Customers = DB::query($query,'array','index','id');
 
-		$num_pages = ceil($customercount->total / $per_page);
-		$page_links = paginate_links( array(
-			'base' => add_query_arg( 'pagenum', '%#%' ),
-			'format' => '',
-			'total' => $num_pages,
-			'current' => $pagenum
-		));
+		$total = DB::found();
+
+		// Add order data to customer records in this view
+		$orders = DB::query("SELECT customer,SUM(total) AS total,count(id) AS orders FROM $purchase_table WHERE customer IN (".join(',',array_keys($Customers)).") GROUP BY customer",'array','index','customer');
+		foreach ($Customers as &$record) {
+			$record->total = 0; $record->orders = 0;
+			if ( ! isset($orders[$record->id]) ) continue;
+			$record->total = $orders[$record->id]->total;
+			$record->orders = $orders[$record->id]->orders;
+		}
+
+		$num_pages = ceil($total / $per_page);
+		$ListTable = ShoppUI::table_set_pagination ($this->screen, $total, $num_pages, $per_page );
 
 		$ranges = array(
 			'all' => __('Show New Customers','Shopp'),
@@ -211,14 +253,16 @@ class Account extends AdminController {
 			);
 
 
-		$formatPref = $Shopp->Settings->get('customerexport_format');
+		$formatPref = shopp_setting('customerexport_format');
 		if (!$formatPref) $formatPref = 'tab';
 
-		$columns = array_merge(Customer::exportcolumns(),Billing::exportcolumns(),Shipping::exportcolumns());
-		$selected = $Shopp->Settings->get('customerexport_columns');
+		$columns = array_merge(Customer::exportcolumns(),BillingAddress::exportcolumns(),ShippingAddress::exportcolumns());
+		$selected = shopp_setting('customerexport_columns');
 		if (empty($selected)) $selected = array_keys($columns);
 
-		$authentication = $Shopp->Settings->get('account_system');
+		$authentication = shopp_setting('account_system');
+
+		$action = add_query_arg( array('page'=>$this->Admin->pagename('customers') ),admin_url('admin.php'));
 
 		include(SHOPP_ADMIN_PATH."/customers/customers.php");
 
@@ -232,14 +276,14 @@ class Account extends AdminController {
 	 **/
 	function columns () {
 		shopp_enqueue_script('calendar');
-		register_column_headers('shopp_page_shopp-customers', array(
+		register_column_headers($this->screen, array(
 			'cb'=>'<input type="checkbox" />',
-			'name'=>__('Name','Shopp'),
-			'login'=>__('Login','Shopp'),
+			'customer-name'=>__('Name','Shopp'),
+			'customer-login'=>__('Login','Shopp'),
 			'email'=>__('Email','Shopp'),
-			'location'=>__('Location','Shopp'),
-			'orders'=>__('Orders','Shopp'),
-			'joined'=>__('Joined','Shopp'))
+			'customer-location'=>__('Location','Shopp'),
+			'customer-orders'=>__('Orders','Shopp'),
+			'customer-joined'=>__('Joined','Shopp'))
 		);
 
 	}
@@ -266,28 +310,28 @@ class Account extends AdminController {
 	 * @return void
 	 **/
 	function editor () {
-		global $Shopp,$Customer;
-		$db =& DB::get();
 
-		if ( !(is_shopp_userlevel() || current_user_can('shopp_customers')) )
+		if ( ! current_user_can('shopp_customers') )
 			wp_die(__('You do not have sufficient permissions to access this page.'));
 
 
 		if ($_GET['id'] != "new") {
 			$Customer = new Customer($_GET['id']);
-			$Customer->Billing = new Billing($Customer->id,'customer');
-			$Customer->Shipping = new Shipping($Customer->id,'customer');
+			$Customer->Billing = new BillingAddress($Customer->id);
+			$Customer->Shipping = new ShippingAddress($Customer->id);
 			if (empty($Customer->id))
 				wp_die(__('The requested customer record does not exist.','Shopp'));
 		} else $Customer = new Customer();
 
 		if (empty($Customer->info->meta)) remove_meta_box('customer-info','shopp_page_shopp-customers','normal');
 
-		$purchase_table = DatabaseObject::tablename(Purchase::$table);
-		$r = $db->query("SELECT count(id) AS purchases,SUM(total) AS total FROM $purchase_table WHERE customer='$Customer->id' LIMIT 1");
+		if ($Customer->id > 0) {
+			$purchase_table = DatabaseObject::tablename(Purchase::$table);
+			$r = DB::query("SELECT count(id) AS purchases,SUM(total) AS total FROM $purchase_table WHERE customer='$Customer->id' LIMIT 1");
 
-		$Customer->orders = $r->purchases;
-		$Customer->total = $r->total;
+			$Customer->orders = $r->purchases;
+			$Customer->total = $r->total;
+		}
 
 
 		$countries = array(''=>'&nbsp;');

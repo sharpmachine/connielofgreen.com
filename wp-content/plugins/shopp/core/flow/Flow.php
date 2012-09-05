@@ -11,6 +11,14 @@
  * @subpackage shopp
  **/
 
+// Image Server request handling
+if (isset($_GET['siid']) || preg_match('/images\/\d+/',$_SERVER['REQUEST_URI']))
+	require(dirname(dirname(__FILE__)).'/image.php');
+
+// Script Server request handling
+if (isset($_GET['sjsl']))
+	require(dirname(dirname(__FILE__)).'/scripts.php');
+
 /**
  * Flow
  *
@@ -33,18 +41,18 @@ class Flow {
 	 * @return void
 	 **/
 	function __construct () {
-		register_deactivation_hook(SHOPP_PLUGINFILE, array(&$this, 'deactivate'));
-		register_activation_hook(SHOPP_PLUGINFILE, array(&$this, 'activate'));
+		register_deactivation_hook(SHOPP_PLUGINFILE, array($this, 'deactivate'));
+		register_activation_hook(SHOPP_PLUGINFILE, array($this, 'activate'));
+		if (defined('DOING_AJAX')) add_action('admin_init',array($this,'ajax'));
 
-		if (defined('DOING_AJAX')) add_action('admin_init',array(&$this,'ajax'));
-
-		add_action('admin_menu',array(&$this,'menu'));
+		add_action( 'admin_menu', array($this,'menu') );
+		add_action( 'admin_bar_menu', array($this, 'adminbar'), 50 );
 
 		// Handle automatic updates
-		add_action('update-custom_shopp',array(&$this,'update'));
+		add_action('update-custom_shopp',array($this,'update'));
 
-		if (defined('WP_ADMIN')) add_action('admin_init',array(&$this,'parse'));
-		else add_action('parse_request',array(&$this,'parse'));
+		if (defined('WP_ADMIN')) add_action('admin_init',array($this,'parse'));
+		else add_action('parse_request',array($this,'parse'));
 	}
 
 	/**
@@ -54,43 +62,21 @@ class Flow {
 	 *
 	 * @return boolean
 	 **/
-	function parse () {
-		global $Shopp,$wp;
+	function parse ($wp) {
+		$request = empty($wp->query_vars)?$_GET:$wp->query_vars;
+		$resource = isset($request['src']);
 
-		$this->transactions();
-
-		if (isset($wp->query_vars['src']) ||
-			(defined('WP_ADMIN') && isset($_GET['src']))) $this->resources();
+		if ($resource) $this->resources($request);
 
 		if (defined('WP_ADMIN')) {
 			if (!isset($_GET['page'])) return;
 			if ($this->Admin === false) {
-				require_once(SHOPP_FLOW_PATH."/Admin.php");
+				require(SHOPP_FLOW_PATH."/Admin.php");
 				$this->Admin = new AdminFlow();
 			}
-			$controller = $this->Admin->controller(strtolower($_GET['page']));
+			$controller = $this->Admin->controller(strtolower($request['page']));
 			if (!empty($controller)) $this->handler($controller);
-		} else $this->handler("Storefront");
-	}
-
-	function transactions () {
-
-		if (!empty($_REQUEST['_txnupdate'])) {
-			return do_action('shopp_txn_update');
-		}
-
-		if (!empty($_REQUEST['rmtpay'])) {
-			return do_action('shopp_remote_payment');
-		}
-
-
-		if (isset($_POST['checkout'])) {
-			if ($_POST['checkout'] == "process") do_action('shopp_process_checkout');
-			if ($_POST['checkout'] == "confirmed") do_action('shopp_confirm_order');
-		} else {
-			if (!empty($_POST['shipmethod'])) do_action('shopp_process_shipmethod');
-		}
-
+		} else $this->handler('Storefront');
 	}
 
 	/**
@@ -103,8 +89,11 @@ class Flow {
 	 **/
 	function handler ($controller) {
 		if (!$controller) return false;
-		require_once(SHOPP_FLOW_PATH."/$controller.php");
+		if ( is_a($this->Controller,$controller) ) return true; // Already initialized
+		if (!class_exists($controller))	require(SHOPP_FLOW_PATH."/$controller.php");
+
 		$this->Controller = new $controller();
+		do_action('shopp_'.strtolower($controller).'_init');
 		return true;
 	}
 
@@ -118,8 +107,7 @@ class Flow {
 	function admin () {
 		if (!defined('WP_ADMIN')) return false;
 		$controller = $this->Admin->controller(strtolower($_GET['page']));
-		require_once(SHOPP_FLOW_PATH."/$controller.php");
-		$this->Controller = new $controller();
+		$this->handler($controller);
 		$this->Controller->admin();
 		return true;
 	}
@@ -132,20 +120,20 @@ class Flow {
 	 * @return void
 	 **/
 	function menu () {
-		require_once(SHOPP_FLOW_PATH."/Admin.php");
+		require(SHOPP_FLOW_PATH."/Admin.php");
 		$this->Admin = new AdminFlow();
 		$this->Admin->menus();
 	}
 
 	function ajax () {
 		if (!isset($_REQUEST['action']) || !defined('DOING_AJAX')) return;
-		require_once(SHOPP_FLOW_PATH."/Ajax.php");
+		require(SHOPP_FLOW_PATH."/Ajax.php");
 		$this->Ajax = new AjaxFlow();
 	}
 
-	function resources () {
-		require_once(SHOPP_FLOW_PATH."/Resources.php");
-		$this->Controller = new Resources();
+	function resources ($request) {
+		require(SHOPP_FLOW_PATH."/Resources.php");
+		$this->Controller = new Resources($request);
 	}
 
 	/**
@@ -173,7 +161,7 @@ class Flow {
 		if (!defined('WP_ADMIN')) return;
 		if ($this->Installer !== false) return;
 
-		require_once(SHOPP_FLOW_PATH."/Install.php");
+		require(SHOPP_FLOW_PATH."/Install.php");
 		if (!$this->Installer) $this->Installer = new ShoppInstallation();
 	}
 
@@ -185,10 +173,32 @@ class Flow {
 	function save_settings () {
 		if (empty($_POST['settings']) || !is_array($_POST['settings'])) return false;
 		foreach ($_POST['settings'] as $setting => $value)
-			$this->Settings->save($setting,$value);
+			shopp_set_setting($setting,$value);
 		return true;
 	}
 
+	// Admin Bar
+	function adminbar ( $wp_admin_bar ) {
+		$posttype = get_post_type_object(Product::posttype());
+		if (empty( $posttype ) || !current_user_can( $posttype->cap->edit_post )) return;
+		$wp_admin_bar->add_menu( array(
+			'parent' => 'new-content',
+			'id' => 'new-'.Product::posttype(),
+			'title' => $posttype->labels->singular_name,
+			'href' => admin_url( str_replace('%d','new',$posttype->_edit_link) )
+		) );
+
+		$object = get_queried_object();
+		if (!empty($object) && isset($object->post_type)
+				&& $object->post_type == $posttype->name) {
+			$wp_admin_bar->add_menu( array(
+				'id' => 'edit',
+				'title' => $posttype->labels->edit_item,
+				'href' => get_edit_post_link( $object->ID )
+			) );
+		}
+
+	}
 
 } // End class Flow
 
@@ -203,8 +213,6 @@ class Flow {
  **/
 abstract class FlowController  {
 
-	var $Settings = false;
-
 	/**
 	 * FlowController constructor
 	 *
@@ -214,17 +222,15 @@ abstract class FlowController  {
 	 * @return void
 	 **/
 	function __construct () {
-		if (defined('WP_ADMIN')) {
-			add_action('admin_init',array(&$this,'settings'));
-			$this->settings();
-		} else add_action('shopp_loaded',array(&$this,'settings'));
+		// if (defined('WP_ADMIN')) {
+		// 	add_action('admin_init',array(&$this,'settings'));
+		// 	$this->settings();
+		// } else add_action('shopp_loaded',array(&$this,'settings'));
 	}
 
-	function settings () {
-		global $Shopp;
-		if (!$this->Settings && !empty($Shopp))
-			$this->Settings = &$Shopp->Settings;
-	}
+	// function settings () {
+	// 	ShoppSettings();
+	// }
 
 } // END class FlowController
 
@@ -240,6 +246,9 @@ abstract class FlowController  {
 abstract class AdminController extends FlowController {
 
 	var $Admin = false;
+	var $url;
+
+	private $notices = array();
 
 	/**
 	 * AdminController constructor
@@ -250,9 +259,31 @@ abstract class AdminController extends FlowController {
 	 * @return void
 	 **/
 	function __construct () {
-		parent::__construct();
+		// parent::__construct();
 		global $Shopp;
 		if (!empty($Shopp->Flow->Admin)) $this->Admin = &$Shopp->Flow->Admin;
+		$this->url = add_query_arg(array('page'=>esc_attr($_GET['page'])),admin_url('admin.php'));
+
+		add_action('shopp_admin_notices',array($this,'notices'));
+	}
+
+	function notice ($message,$style='updated',$priority=10) {
+		$notice = new StdClass();
+		$notice->message = $message;
+		$notice->style = $style;
+		array_splice($this->notices,$priority,0,array($notice));
+	}
+
+	function notices () {
+		if (empty($this->notices)) return;
+		$markup = array();
+		foreach ($this->notices as $notice) {
+			$markup[] = '<div class="'.$notice->style.' below-h2">';
+			$markup[] = '<p>'.$notice->message.'</p>';
+			$markup[] = '</div>';
+		}
+		if ( ! empty($markup) ) echo join('',$markup);
+		$this->notices = array(); // Reset output buffer
 	}
 
 }
@@ -272,5 +303,8 @@ function &ShoppStorefront () {
 	if (get_class($Shopp->Flow->Controller) != "Storefront") return $false;
 	return $Shopp->Flow->Controller;
 }
+
+add_filter('shopp_update_key','shopp_keybind');
+add_filter('shopp_update_key','base64_encode');
 
 ?>

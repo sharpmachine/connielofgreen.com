@@ -19,12 +19,12 @@
 <?php if (shopp('purchase','hasfreight')): ?>
 <td><fieldset class="shipping">
 		<legend><?php _e('Ship to','Shopp'); ?></legend>
-		<address><big><?php shopp('purchase','firstname'); ?> <?php shopp('purchase','lastname'); ?></big><br />
+		<address><big><?php shopp('purchase','shipname'); ?></big><br /><br />
 		<?php shopp('purchase','shipaddress'); ?><br />
 		<?php shopp('purchase','shipxaddress'); ?>
 		<?php shopp('purchase','shipcity'); ?>, <?php shopp('purchase','shipstate'); ?> <?php shopp('purchase','shippostcode'); ?><br />
 		<?php shopp('purchase','shipcountry'); ?></address>
-		
+
 		<p><?php _e('Shipping:','Shopp'); ?> <?php shopp('purchase','shipmethod'); ?></p>
 </fieldset></td>
 <?php endif; ?>
@@ -85,12 +85,12 @@
 <?php if(shopp('purchase','has-data')): ?>
 	<ul>
 	<?php while(shopp('purchase','orderdata')): ?>
-		<?php if (shopp('purchase','data','echo=0') == '') continue; ?>
+		<?php if (shopp('purchase','get-data') == '') continue; ?>
 		<li><strong><?php shopp('purchase','data','name'); ?>:</strong> <?php shopp('purchase','data'); ?></li>
 	<?php endwhile; ?>
 	</ul>
 <?php endif; ?>
-	
+
 
 <?php else: ?>
 	<p class="warning"><?php _e('There were no items found for this purchase.','Shopp'); ?></p>

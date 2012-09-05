@@ -36,6 +36,7 @@ define('SHOPP_DEBUG_ERR',2048);	// Debug-only (for logging)
  * @subpackage errors
  **/
 class ShoppErrors {
+	private static $instance;
 
 	var $errors = array();				// Error message registry
 	var $notifications;					// Notification subscription registry
@@ -50,18 +51,38 @@ class ShoppErrors {
 	 * @return void
 	 **/
 	function __construct ($level = SHOPP_ALL_ERR) {
-		ShoppingObject::store('errors',$this->errors);
+		$error_logging = shopp_setting('error_logging');
+		if ( $error_logging ) $level = $error_logging;
 
 		if (defined('WP_DEBUG') && WP_DEBUG) $this->reporting = SHOPP_DEBUG_ERR;
 		if ($level > $this->reporting) $this->reporting = $level;
 
 		$this->notifications = new CallbackSubscription();
 
-		$types = E_ALL ^ E_NOTICE;
+		$types = E_ALL;// ^ E_NOTICE;
 		if (defined('WP_DEBUG') && WP_DEBUG) $types = E_ALL;
 		// Handle PHP errors
 		if ($this->reporting >= SHOPP_PHP_ERR)
-			set_error_handler(array($this,'phperror'),$types);
+			set_error_handler(array($this,'php'),$types);
+
+		add_action('init', array(&$this, 'init'), 5);
+	}
+
+	function init () {
+		ShoppingObject::store('errors', $this->errors);
+		foreach( $this->errors as $index => $error ) {
+			if ( $error->remove ) unset($this->errors[$index]);
+		}
+	}
+
+	public static function instance () {
+		if ( ! self::$instance instanceof self )
+			self::$instance = new self();
+		return self::$instance;
+	}
+
+	function set_loglevel () {
+		$this->reporting = shopp_setting('error_logging');
 	}
 
 	/**
@@ -169,7 +190,7 @@ class ShoppErrors {
 	 **/
 	function remove ($error) {
 		if (!isset($this->errors[$error->code])) return false;
-		unset($this->errors[$error->code]);
+		$this->errors[$error->code]->remove = true;
 		return true;
 	}
 
@@ -195,43 +216,20 @@ class ShoppErrors {
 	 * @param string $message The PHP error message
 	 * @param string $file The file the error occurred in
 	 * @param int $line The line number the error occurred at in the file
-	 * @return void
+	 * @return boolean
 	 **/
-	function phperror ($number, $message, $file, $line) {
-		if (strpos($file,SHOPP_PATH) !== false)
-			new ShoppError($message,'php_error',SHOPP_PHP_ERR,
-				array('file'=>$file,'line'=>$line,'phperror'=>$number));
+	function php ($number, $message, $file, $line) {
+		if (strpos($file,SHOPP_PATH) === false) return true;
+		$debug = '';
+		if (SHOPP_DEBUG) $debug = sprintf(" [%s, line %d]", basename($file),$line);
+		new ShoppError($message.$debug,'php_error',SHOPP_PHP_ERR,
+			array('file'=>$file,'line'=>$line,'phperror'=>$number));
+		if ($number == E_USER_ERROR) return false; // Always show fatal errors
+		return true;
 	}
 
-	/**
-	 * Provides functionality for the shopp('error') tags
-	 *
-	 * Support for triggering errors through the Template API.
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.0
-	 *
-	 * @param string $property The error property for the tag
-	 * @param array $options Tag options
-	 * @return void
-	 **/
-	function tag ($property,$options=array()) {
-		global $Shopp;
-		if (empty($options)) return false;
-		switch ($property) {
-			case "trxn": new ShoppError(key($options),'template_error',SHOPP_TRXN_ERR); break;
-			case "auth": new ShoppError(key($options),'template_error',SHOPP_AUTH_ERR); break;
-			case "addon": new ShoppError(key($options),'template_error',SHOPP_ADDON_ERR); break;
-			case "comm": new ShoppError(key($options),'template_error',SHOPP_COMM_ERR); break;
-			case "stock": new ShoppError(key($options),'template_error',SHOPP_STOCK_ERR); break;
-			case "admin": new ShoppError(key($options),'template_error',SHOPP_ADMIN_ERR); break;
-			case "db": new ShoppError(key($options),'template_error',SHOPP_DB_ERR); break;
-			case "debug": new ShoppError(key($options),'template_error',SHOPP_DEBUG_ERR); break;
-			default: new ShoppError(key($options),'template_error',SHOPP_ERR); break;
-		}
-	}
+} //end ShoppErrors
 
-}
 
 /**
  * ShoppError class
@@ -250,6 +248,7 @@ class ShoppError {
 	var $messages;
 	var $level;
 	var $data = array();
+	var $remove = false;
 
 	/**
 	 * Creates and registers a new error
@@ -259,8 +258,8 @@ class ShoppError {
 	 *
 	 * @return void Description...
 	 **/
-	function ShoppError($message='',$code='',$level=SHOPP_ERR,$data='') {
-		$Errors = &ShoppErrors();
+	function __construct ($message='',$code='',$level=SHOPP_ERR,$data='') {
+		$Errors = ShoppErrors();
 
 		if (!is_a($Errors,'ShoppErrors')) return;
 		if ($level > $Errors->reporting) return;
@@ -275,9 +274,9 @@ class ShoppError {
 			32		=> 'CORE WARNING',
 			64		=> 'COMPILE ERROR',
 			128		=> 'COMPILE WARNING',
-			256		=> 'USER ERROR',
-			512		=> 'USER WARNING',
-			1024	=> 'USER NOTICE',
+			256		=> 'Fatal error',
+			512		=> 'Warning',
+			1024	=> 'Notice',
 			2048	=> 'STRICT NOTICE',
 			4096 	=> 'RECOVERABLE ERROR'
 		);
@@ -302,7 +301,7 @@ class ShoppError {
 		if (isset($this->data['phperror']) && isset($php[$this->data['phperror']]))
 			$this->source = "PHP ".$php[$this->data['phperror']];
 
-		$Errors = &ShoppErrors();
+		$Errors = ShoppErrors();
 		if (!empty($Errors)) $Errors->add($this);
 	}
 
@@ -315,7 +314,7 @@ class ShoppError {
 	 * @return void
 	 **/
 	function __sleep () {
-		return array('code','source','messages','level');
+		return array('remove','code','source','messages','level');
 	}
 
 	/**
@@ -348,7 +347,7 @@ class ShoppError {
 			!empty($this->source) && $source) $string .= "$this->source: ";
 		$string .= join($delimiter,$this->messages);
 		if ($remove) {
-			$Errors = &ShoppErrors();
+			$Errors = ShoppErrors();
 			if (!empty($Errors->errors)) $Errors->remove($this);
 		}
 		return $string;
@@ -368,6 +367,9 @@ class ShoppError {
  * @subpackage errors
  **/
 class ShoppErrorLogging {
+
+	private static $instance;
+
 	var $dir;
 	var $file = "shopp_debug.log";
 	var $logfile;
@@ -383,7 +385,9 @@ class ShoppErrorLogging {
 	 * @return void
 	 **/
 	function __construct ($loglevel=0) {
-		$this->loglevel = $loglevel;
+		$loglevelsetting = shopp_setting('error_logging');
+		$this->loglevel = $loglevelsetting ? $loglevelsetting : $loglevel;
+
 		$this->dir = defined('SHOPP_LOG_PATH') ? SHOPP_LOG_PATH : sys_get_temp_dir();
 		$this->dir = sanitize_path($this->dir); // Windows path sanitiation
 
@@ -393,6 +397,16 @@ class ShoppErrorLogging {
 
 		$Errors = &ShoppErrors();
 		$Errors->notifications->subscribe($this,'log');
+	}
+
+	public static function instance() {
+		if ( ! self::$instance )
+			self::$instance = new self();
+		return self::$instance;
+	}
+
+	function set_loglevel() {
+		$this->loglevel = shopp_setting('error_logging');
 	}
 
 	/**
@@ -407,12 +421,13 @@ class ShoppErrorLogging {
 	function log ($error) {
 		if ($error->level > $this->loglevel) return;
 		$debug = "";
-		if (isset($error->debug['file'])) $debug = " [".basename($error->debug['file']).", line ".$error->debug['line']."]";
-		$message = date("Y-m-d H:i:s",mktime())." - ".$error->message(false,true).$debug."\n";
-		if (($this->log = @fopen($this->logfile,'at')) !== false) {
-			fwrite($this->log,$message);
-			fclose($this->log);
-		} else error_log($message);
+		if (isset($error->debug['file'])) {
+			$debug = sprintf("[%s, line %d]", basename($error->debug['file']),$error->debug['line']);
+			$debug = " ".apply_filters('shopp_error_message_debugdata',$debug,$error->debug);
+		}
+		$message = date("Y-m-d H:i:s",time())." - ".$error->message(false,true)."$debug\n";
+		error_log($message,3,$this->logfile);
+		error_log($error->message(false,true));
 	}
 
 	/**
@@ -434,31 +449,39 @@ class ShoppErrorLogging {
 	 *
 	 * @author Jonathan Davis
 	 * @since 1.0
+	 * @version 1.2
 	 *
 	 * @param int $lines The number of lines to get from the end of the log file
+	 * @param int $buffer Buffer size in bytes to handle each iteration
 	 * @return array List of log file lines
 	 **/
-	function tail($lines=100) {
+	function tail($lines=100,$buffer=4096) {
 		if (!file_exists($this->logfile)) return;
-		$f = fopen($this->logfile, "r");
-		$c = $lines;
-		$pos = -2;
-		$beginning = false;
-		$text = array();
-		while ($c > 0) {
-			$t = "";
-			while ($t != "\n") {
-				if(fseek($f, $pos, SEEK_END) == -1) { $beginning = true; break; }
-				$t = fgetc($f);
-				$pos--;
-			}
-			$c--;
-			if($beginning) rewind($f);
-			$text[$lines-$c-1] = fgets($f);
-			if($beginning) break;
+		$f = fopen($this->logfile, 'rb');
+
+		// Start at the end
+		fseek($f, -1, SEEK_END);
+
+		// Take into acount files that don't end with a blank line
+		if("\n" != fread($f, 1)) $lines--;
+
+		// Start reading
+		$output = $chunk = '';
+		while(ftell($f) > 0 && $lines >= 0) {
+			$seek = min(ftell($f), $buffer);				// Figure out how far to go back
+			fseek($f, -$seek, SEEK_CUR);					// Jump back from the current position
+			$output = ($chunk = fread($f, $seek)).$output;	// Read a buffer chunk and prepend it to our output
+			fseek($f, -strlen($chunk), SEEK_CUR);// Jump back to where we started reading
+			$lines -= substr_count($chunk, "\n");			// Decrease our line counter
 		}
 		fclose($f);
-		return array_reverse($text);
+
+		// Handle over-reading because of buffer size
+		while ($lines++ < 0)
+			$output = substr($output, strpos($output, "\n") + 1);
+
+		return explode("\n",trim($output));
+
 	}
 
 }
@@ -475,7 +498,7 @@ class ShoppErrorLogging {
  * @subpackage errors
  **/
 class ShoppErrorNotification {
-
+	private static $instance;
 	var $recipients;	// Recipient addresses to send to
 	var $types=0;		// Error types to send
 
@@ -490,10 +513,31 @@ class ShoppErrorNotification {
 	 * @return void
 	 **/
 	function __construct ($recipients='',$types=array()) {
+		$recipients = shopp_setting('merchant_email');
+		$types = shopp_setting('error_notifications');
+
 		if (empty($recipients)) return;
 		$this->recipients = $recipients;
 		foreach ((array)$types as $type) $this->types += $type;
 		$Errors = &ShoppErrors();
+		$Errors->notifications->subscribe($this,'notify');
+	}
+
+	public static function instance() {
+		if ( ! self::$instance )
+			self::$instance = new self();
+		return self::$instance;
+	}
+
+	function set_notifications () {
+		$recipients = shopp_setting('merchant_email');
+		$types = shopp_setting('error_notifications');
+
+		if (empty($recipients)) return;
+		$this->recipients = $recipients;
+		foreach ((array)$types as $type) $this->types += $type;
+
+		$Errors = ShoppErrors();
 		$Errors->notifications->subscribe($this,'notify');
 	}
 
@@ -514,14 +558,14 @@ class ShoppErrorNotification {
 		$_[] = 'To: '.$this->recipients;
 		$_[] = 'Subject: '.__('Shopp Notification','Shopp');
 		$_[] = '';
-		$_[] = __('This is an automated message notification generated when the Shopp installation at '.get_bloginfo('url').' encountered the following:','Shopp');
+		$_[] = __('This is an automated notification message generated by the Shopp installation at '.get_bloginfo('url').'.','Shopp');
 		$_[] = '';
 		$_[] = $error->message();
 		$_[] = '';
 		if (isset($error->debug['file']) && defined('WP_DEBUG'))
 			$_[] = 'DEBUG: '.basename($error->debug['file']).', line '.$error->debug['line'].'';
 
-		shopp_email(join("\r\n",$_));
+		shopp_email(join("\n",$_));
 	}
 
 }
@@ -552,9 +596,16 @@ class CallbackSubscription {
  *
  * @return void Description...
  **/
-function &ShoppErrors () {
-	global $Shopp;
-	return $Shopp->Errors;
+function ShoppErrors () {
+	return ShoppErrors::instance();
+}
+
+function ShoppErrorLogging () {
+	return ShoppErrorLogging::instance();
+}
+
+function ShoppErrorNotification () {
+	return ShoppErrorNotification::instance();
 }
 
 /**

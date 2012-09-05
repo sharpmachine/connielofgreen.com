@@ -1,8 +1,11 @@
 <div class="wrap shopp">
-	<div class="icon32"></div>
-	<h2><?php _e('Customers','Shopp'); ?></h2>
 
-	<form action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>" id="orders-list" method="get">
+	<?php if (!empty($updated)): ?><div id="message" class="updated fade"><p><?php echo $updated; ?></p></div><?php endif; ?>
+
+	<div class="icon32"></div>
+	<h2><?php _e('Customers','Shopp'); ?> <a href="<?php echo esc_url( add_query_arg('id','new', $action) ); ?>" class="button add-new"><?php _e('Add New','Shopp'); ?></a></h2>
+
+	<form action="<?php echo esc_url($action); ?>" id="orders-list" method="get">
 	<div>
 		<input type="hidden" name="page" value="<?php echo $page; ?>" />
 		<input type="hidden" name="status" value="<?php echo $status; ?>" />
@@ -29,7 +32,8 @@
 				<button type="submit" id="filter-button" name="filter" value="customers" class="button-secondary"><?php _e('Filter','Shopp'); ?></button>
 			</div>
 			</div>
-			<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+
+			<?php $ListTable->pagination('top'); ?>
 		<div class="clear"></div>
 	</div>
 	<div class="clear"></div>
@@ -41,13 +45,14 @@
 		<tfoot>
 		<tr><?php print_column_headers('shopp_page_shopp-customers',false); ?></tr>
 		</tfoot>
-	<?php if (sizeof($Customers) > 0): ?>
+	<?php if (count($Customers) > 0): ?>
 		<tbody id="customers-table" class="list orders">
 		<?php
 			$hidden = get_hidden_columns('shopp_page_shopp-customers');
 
 			$even = false;
 			foreach ($Customers as $Customer):
+
 			$CustomerName = (empty($Customer->firstname) && empty($Customer->lastname))?'('.__('no contact name','Shopp').')':"{$Customer->firstname} {$Customer->lastname}";
 			?>
 		<tr<?php if (!$even) echo " class='alternate'"; $even = !$even; ?>>
@@ -72,7 +77,7 @@
 		<?php endforeach; ?>
 		</tbody>
 	<?php else: ?>
-		<tbody><tr><td colspan="6"><?php _e('No','Shopp'); ?> <?php _e('customers, yet.','Shopp'); ?></td></tr></tbody>
+		<tbody><tr><td colspan="7"><?php _e('No customers yet.','Shopp'); ?></td></tr></tbody>
 	<?php endif; ?>
 	</table>
 
@@ -101,7 +106,9 @@
 			</form>
 		</div>
 		<?php endif; ?>
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+
+		<?php $ListTable->pagination('bottom'); ?>
+
 		<div class="clear"></div>
 	</div>
 </div>
@@ -110,7 +117,7 @@
 <div id="end-calendar" class="calendar"></div>
 
 <script type="text/javascript">
-var lastexport = new Date(<?php echo date("Y,(n-1),j",$Shopp->Settings->get('customerexport_lastexport')); ?>);
+var lastexport = new Date(<?php echo date("Y,(n-1),j",shopp_setting('customerexport_lastexport')); ?>);
 
 jQuery(document).ready( function() {
 	var $=jqnc();
@@ -142,14 +149,14 @@ function formatDate (e) {
 
 var range = $('#range'),
 	start = $('#start').change(formatDate),
-	StartCalendar = $('#start-calendar').PopupCalendar({
+	StartCalendar = $('<div id="start-calendar" class="calendar"></div>').appendTo('#wpwrap').PopupCalendar({
 		scheduling:false,
 		input:start
 	}).bind('calendarSelect',function () {
 		range.val('custom');
 	}),
 	end = $('#end').change(formatDate),
-	EndCalendar = $('#end-calendar').PopupCalendar({
+	EndCalendar = $('<div id="end-calendar" class="calendar"></div>').appendTo('#wpwrap').PopupCalendar({
 		scheduling:true,
 		input:end,
 		scheduleAfter:StartCalendar

@@ -8,12 +8,26 @@
 	<?php include("navigation.php"); ?>
 	<br class="clear" />
 
-	<form action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>" method="post" id="order-updates">
+	<form action="<?php echo esc_url(add_query_arg(array('id'=>$Purchase->id),$this->url)); ?>" method="post" id="order-updates">
 	<div id="order">
 		<div class="title">
 			<div id="titlewrap">
 				<?php _e('Order','Shopp'); ?> #<?php echo $Purchase->id; ?><span class="date"><?php echo _d(get_option('date_format'), $Purchase->created); ?> <small><?php echo date(get_option('time_format'),$Purchase->created); ?></small></span>
-				<input type="submit" id="print-button" value="<?php _e('Print Order','Shopp'); ?>" class="button" />
+
+				<div class="alignright">
+
+					<?php if ($Purchase->shipped): ?>
+					<div class="stamp shipped<?php if ($Purchase->isvoid()) echo ' void'; ?>"><div class="type"><?php _e('Shipped','Shopp'); ?></div><div class="ing">&nbsp;</div></div>
+					<?php endif; ?>
+
+					<?php if ($Purchase->isvoid()): ?>
+					<div class="stamp void"><div class="type"><?php _e('Void','Shopp'); ?></div><div class="ing">&nbsp;</div></div>
+					<?php elseif ($Purchase->ispaid()): ?>
+					<div class="stamp paid"><div class="type"><?php _e('Paid','Shopp'); ?></div><div class="ing">&nbsp;</div></div>
+					<?php endif; ?>
+
+				</div>
+
 			</div>
 		</div>
 		<?php if (sizeof($Purchase->purchased) > 0): ?>
@@ -34,19 +48,22 @@
 			?>
 				<tr<?php if ($even) echo ' class="alternate"'; $even = !$even; ?>>
 					<td>
-						<?php echo $Item->name; ?>
-						<?php if (!empty($Item->optionlabel)) echo "({$Item->optionlabel})"; ?>
+						<a href="<?php echo add_query_arg(array('page' => 'shopp-products','id' => $Item->product),admin_url('admin.php')); ?>"><?php echo $Item->name; ?>
+						<?php if (!empty($Item->optionlabel)) echo "({$Item->optionlabel})"; ?></a>
 						<?php if (is_array($Item->data) || !empty($Item->sku) || !empty($Item->addons)): ?>
 						<ul>
 						<?php if (!empty($Item->sku)): ?><li><small><?php _e('SKU','Shopp'); ?>: <strong><?php echo $Item->sku; ?></strong></small></li><?php endif; ?>
-						<?php foreach ($Item->addons->meta as $id => $addon):
-							if ($Purchase->taxing == "inclusive")
-								$addonprice = $addon->value->unitprice+($addon->value->unitprice*$taxrate);
-							else $addonprice = $addon->value->unitprice;
 
-							?>
-							<li><small><?php echo apply_filters('shopp_purchased_addon_name',$addon->name); ?><?php if (!empty($addon->value->sku)) echo apply_filters('shopp_purchased_addon_sku',' [SKU: '.$addon->value->sku.']'); ?>: <strong><?php echo apply_filters('shopp_purchased_addon_unitprice',money($addonprice)); ?></strong></small></li>
-						<?php endforeach; ?>
+						<?php if (isset($Item->addons) && isset($Item->addons->meta)): ?>
+							<?php foreach ((array)$Item->addons->meta as $id => $addon):
+								if ($Purchase->taxing == "inclusive")
+									$addonprice = $addon->value->unitprice+($addon->value->unitprice*$taxrate);
+								else $addonprice = $addon->value->unitprice;
+
+								?>
+								<li><small><?php echo apply_filters('shopp_purchased_addon_name',$addon->name); ?><?php if (!empty($addon->value->sku)) echo apply_filters('shopp_purchased_addon_sku',' [SKU: '.$addon->value->sku.']'); ?>: <strong><?php echo apply_filters('shopp_purchased_addon_unitprice',money($addonprice)); ?></strong></small></li>
+							<?php endforeach; ?>
+						<?php endif; ?>
 						<?php foreach ($Item->data as $name => $value): ?>
 							<li><small><?php echo apply_filters('shopp_purchased_data_name',$name); ?>: <strong><?php echo apply_filters('shopp_purchased_data_value',$value); ?></strong></small></li>
 						<?php endforeach; ?>
@@ -81,7 +98,7 @@
 			<?php endif; ?>
 			<?php if ($Purchase->freight > 0): ?>
 			<tr class="totals">
-				<th scope="row" colspan="3" class="total"><?php _e('Shipping','Shopp'); ?></th>
+				<th scope="row" colspan="3" class="total shipping"><span class="method"><?php echo apply_filters('shopp_order_manager_shipping_method',$Purchase->shipoption); ?></span> <?php _e('Shipping','Shopp'); ?></th>
 				<td class="money"><?php echo money($Purchase->freight); ?></td>
 			</tr>
 			<?php endif; ?>
@@ -107,11 +124,11 @@
 		<div class="meta-boxes">
 
 			<div id="column-one" class="column left-column">
-				<?php do_meta_boxes('toplevel_page_shopp-orders', 'side', $Purchase, $UI); ?>
+				<?php do_meta_boxes('toplevel_page_shopp-orders', 'side', $Purchase); ?>
 			</div>
 			<div id="main-column">
 				<div id="column-two" class="column right-column">
-					<?php do_meta_boxes('toplevel_page_shopp-orders', 'normal', $Purchase, $UI); ?>
+					<?php do_meta_boxes('toplevel_page_shopp-orders', 'normal', $Purchase); ?>
 				</div>
 			</div>
 			<br class="clear" />
@@ -130,6 +147,8 @@
 
 <script type="text/javascript">
 /* <![CDATA[ */
+var carriers = <?php echo json_encode($carriers_json); ?>;
+
 jQuery(document).ready(function() {
 	var $=jqnc(),
 		noteurl = '<?php echo wp_nonce_url(admin_url('admin-ajax.php'), 'wp_ajax_shopp_order_note_message'); ?>';
@@ -188,40 +207,29 @@ jQuery(document).ready(function() {
 	});
 
 	$('td .editnote').click(function () {
-		var cell = $(this).parents('td');
-		var note = $(cell).find('div');
-		var ctrls = cell.find('span.notectrls');
-		var meta = cell.find('p.notemeta');
-		var idattr = note.attr('id').split("-");
-		var id = idattr[1];
+		var editbtn = $(this).attr('disabled',true).addClass('updating'),
+			cell = editbtn.parents('td'),
+			note = cell.find('div'),
+			ctrls = cell.find('span.notectrls'),
+			meta = cell.find('p.notemeta'),
+			idattr = note.attr('id').split("-"),
+			id = idattr[1];
 		$.get(noteurl+'&action=shopp_order_note_message&id='+id,false,function (msg) {
+			editbtn.removeAttr('disabled').removeClass('updating');
 			if (msg == '1') return;
 			var editor = $('<textarea name="note-editor['+id+']" cols="50" rows="10" />').val(msg).prependTo(cell);
-			var buttons = $('<p class="alignright" />').appendTo(meta);
-			var cancel = $('<button type="button" name="cancel" class="button-secondary">Cancel<\/button>').appendTo(buttons).click(function () {
-				buttons.remove();
-				editor.remove();
-				note.show();
-				ctrls.addClass('notectrls');
-			});
-			var save = $('<button type="submit" name="edit-note['+id+']" class="button-primary">Save Note<\/button>').appendTo(buttons);
+				ui = $('<div class="controls alignright">'+
+						'<button type="button" name="cancel" class="cancel-edit-note button-secondary">Cancel</button>'+
+						'<button type="submit" name="edit-note['+id+']" class="save-note button-primary">Save Note</button></div>').appendTo(meta),
+				cancel = ui.find('button.cancel-edit-note').click(function () {
+						editor.remove();
+						ui.remove();
+						note.show();
+						ctrls.addClass('notectrls');
+					});
 			note.hide();
 			ctrls.hide().removeClass('notectrls');
 		});
-
-	});
-
-	$('#print-button').click(function () {
-		var frame = $('#print-receipt').get(0);
-		if ($.browser.opera || $.browser.msie) {
-			var preview = window.open(frame.contentWindow.location.href+"&print=auto");
-			$(preview).load(function () {
-				preview.close();
-			});
-		} else {
-			frame.contentWindow.focus();
-			frame.contentWindow.print();
-		}
 
 	});
 

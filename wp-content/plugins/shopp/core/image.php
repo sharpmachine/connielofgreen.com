@@ -10,16 +10,21 @@
  * @subpackage image
  **/
 
+// Reduce image display issues by hiding warnings/notices
+error_reporting(E_ERROR | E_WARNING | E_PARSE);
+
 chdir(dirname(__FILE__));
 
-require_once(realpath('DB.php'));
-require_once(realpath('functions.php'));
-require_once('model/Error.php');
-require_once('model/Settings.php');
-require_once("model/Modules.php");
+if (!class_exists('SingletonFramework')) require(realpath('Framework.php'));
+if (!class_exists('DB')) require(realpath('DB.php'));
+if (!function_exists('shopp_find_wpload')) require(realpath('functions.php'));
+if (!class_exists('ShoppErrors')) require('model/Error.php');
+if (!class_exists('Settings')) require('model/Settings.php');
+if (!class_exists('ModuleLoader')) require('model/Modules.php');
 
-require_once("model/Meta.php");
-require_once("model/Asset.php");
+if (!class_exists('MetaObject')) require('model/Meta.php');
+if (!class_exists('ImageAsset')) require('model/Asset.php');
+if (!function_exists('shopp_setting')) require(realpath('../api/settings.php'));
 
 /**
  * ImageServer class
@@ -28,10 +33,11 @@ require_once("model/Asset.php");
  * @since 1.1
  * @package image
  **/
-class ImageServer extends DatabaseObject {
+class ImageServer {
+
+	var $caching = true;	// Set to false to force off image caching
 
 	var $request = false;
-	var $caching = true;
 	var $parameters = array();
 	var $args = array('width','height','scale','sharpen','quality','fill');
 	var $scaling = array('all','matte','crop','width','height');
@@ -45,15 +51,21 @@ class ImageServer extends DatabaseObject {
 	var $Image = false;
 
 	function __construct () {
-		define('SHOPP_PATH',sanitize_path(dirname(dirname(__FILE__))));
-		define("SHOPP_STORAGE",SHOPP_PATH."/storage");
+		if (!defined('SHOPP_PATH'))
+			define('SHOPP_PATH',sanitize_path(dirname(dirname(__FILE__))));
+		if (!defined('SHOPP_MODEL_PATH'))
+			define('SHOPP_MODEL_PATH',SHOPP_PATH.'/core/model');
+		if (!defined('SHOPP_STORAGE'))
+			define("SHOPP_STORAGE",SHOPP_PATH."/storage");
+		if (!defined('SHOPP_QUERY_DEBUG'))
+			define('SHOPP_QUERY_DEBUG',true);
 
-		$this->dbinit();
 		$this->request();
 		$this->settings();
 		if ($this->load())
 			$this->render();
 		else $this->error();
+
 	}
 
 	/**
@@ -65,11 +77,14 @@ class ImageServer extends DatabaseObject {
 	 * @return void
 	 **/
 	function request () {
-		foreach ($_GET as $key => $value) {
-			if ($key == "siid") $this->request = $value;
-			if (isset($key) && empty($value))
-				$this->parameters = explode(',',$key);
+
+		if ( isset($_GET['siid']) ) $this->request = $_GET['siid'];
+
+		foreach ($_GET as $arg => $v) {
+			if (false !== strpos($arg,',')) {
+				$this->parameters = explode(',',$arg);
 				$this->valid = array_pop($this->parameters);
+			}
 		}
 
 		// Handle pretty permalinks
@@ -77,7 +92,7 @@ class ImageServer extends DatabaseObject {
 			$this->request = $matches[1];
 
 		foreach ($this->parameters as $index => $arg)
-			if ($arg !== false) $this->{$this->args[$index]} = intval($arg);
+			if ('' != $arg) $this->{$this->args[$index]} = intval($arg);
 
 		if ($this->height == 0 && $this->width > 0) $this->height = $this->width;
 		if ($this->width == 0 && $this->height > 0) $this->width = $this->height;
@@ -95,8 +110,16 @@ class ImageServer extends DatabaseObject {
 	 * @return boolean Status of the image load
 	 **/
 	function load () {
+
+		$cache = 'image_'.$this->request.($this->valid?'_'.$this->valid:'');
+		$cached = wp_cache_get($cache,'shopp_image');
+		if ($cached) return ($this->Image = $cached);
+
 		$this->Image = new ImageAsset($this->request);
 		if (max($this->width,$this->height) > 0) $this->loadsized();
+
+		wp_cache_set($cache,$this->Image,'shopp_image');
+
 		if (!empty($this->Image->id) || !empty($this->Image->data)) return true;
 		else return false;
 	}
@@ -115,7 +138,6 @@ class ImageServer extends DatabaseObject {
 		// Use the cached version if it exists, otherwise resize the image
 		if (!empty($Cached->id) && $this->caching) $this->Image = $Cached;
 		else $this->resize(); // No cached copy exists, recreate
-
 	}
 
 	function resize () {
@@ -126,14 +148,16 @@ class ImageServer extends DatabaseObject {
 			die('');
 		}
 
-		require_once(SHOPP_PATH."/core/model/Image.php");
+		if (!class_exists('ImageProcessor'))
+			require(SHOPP_MODEL_PATH."/Image.php");
 		$Resized = new ImageProcessor($this->Image->retrieve(),$this->Image->width,$this->Image->height);
 		$scaled = $this->Image->scaled($this->width,$this->height,$this->scale);
-		$alpha = ($this->Image->mime == "image/png");
+		$alpha = ('image/png' == $this->Image->mime);
+		if (-1 == $this->fill) $alpha = true;
 		$Resized->scale($scaled['width'],$scaled['height'],$this->scale,$alpha,$this->fill);
 
 		// Post sharpen
-		if ($this->sharpen !== false)
+		if (!$alpha && $this->sharpen !== false)
 			$Resized->UnsharpMask($this->sharpen);
 
 		$ResizedImage = new ImageAsset();
@@ -146,6 +170,7 @@ class ImageServer extends DatabaseObject {
 		$ResizedImage->id = false;
 		$ResizedImage->width = $Resized->width;
 		$ResizedImage->height = $Resized->height;
+
 		foreach ($this->args as $index => $arg)
 			$ResizedImage->settings[$arg] = isset($this->parameters[$index])?intval($this->parameters[$index]):false;
 
@@ -169,6 +194,7 @@ class ImageServer extends DatabaseObject {
 	 * @return void
 	 **/
 	function render () {
+
 		$found = $this->Image->found();
 		if (!$found) return $this->error();
 
@@ -214,7 +240,8 @@ class ImageServer extends DatabaseObject {
 	 * @return void Description...
 	 **/
 	function clearpng () {
-		require_once(SHOPP_PATH."/core/model/Image.php");
+		if (!class_exists('ImageProcessor'))
+			require(SHOPP_MODEL_PATH.'/Image.php');
 		$max = 1920;
 		$this->width = min($max,$this->width);
 		$this->height = min($max,$this->height);
@@ -230,52 +257,7 @@ class ImageServer extends DatabaseObject {
 	}
 
 	function settings () {
-		global $Shopp;
-		$Shopp->Settings = new Settings();
-		$this->Settings = &ShoppSettings();
-	}
-
-	/**
-	 * Read the wp-config file to connect to the database
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.1
-	 * @return void
-	 **/
-	function dbinit () {
-		$db = DB::get();
-
-		// Skip init if a connection exists
-		if (defined('ABSPATH') && $db->dbh !== false) return;
-
-		global $table_prefix;
-
-		if (!load_shopps_wpconfig())
-			$this->error();
-
-		chdir(ABSPATH.'wp-content');
-
-		// Establish database connection
-		$db->connect(DB_USER,DB_PASSWORD,DB_NAME,DB_HOST);
-		if ($db->dbh === false) {
-			error_reporting(E_ALL);
-			ini_set('display_errors',1);
-			trigger_error('Error establishing a database connection',E_USER_ERROR);
-			die();
-		}
-
-		if (defined('DB_CHARSET')) {
-			if (function_exists('mysql_set_charset'))
-				mysql_set_charset(DB_CHARSET, $db->dbh);
-			else {
-				$query = "SET NAMES '".DB_CHARSET."'";
-				if (defined('DB_COLLATE')) $query .= " COLLATE '".DB_COLLATE."'";
-				$db->query($query);
-			}
-		}
-
-		if (is_multisite()) shopp_ms_tableprefix();
-
+		ShoppSettings();
 	}
 
 } // end ImageServer class
@@ -290,16 +272,11 @@ if (!function_exists('__')) {
 	}
 }
 
-if (!function_exists('is_multisite')) {
-	function is_multisite() {
-		if ( defined( 'MULTISITE' ) )
-			return MULTISITE;
-
-		if ( defined( 'VHOST' ) || defined( 'SUNRISE' ) )
-			return true;
-
-		return false;
-	}
+// Barebones bootstrap (say that 5x fast) for WordPress
+if (!defined('ABSPATH') && $loadfile = shopp_find_wpload()) {
+	define('SHORTINIT',true);
+	require($loadfile);
+	global $table_prefix;
 }
 
 // Start the server

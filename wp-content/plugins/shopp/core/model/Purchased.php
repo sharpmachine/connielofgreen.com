@@ -20,8 +20,13 @@ class Purchased extends DatabaseObject {
 
 	function copydata ($Item) {
 		parent::copydata ($Item);
-		if (isset($Item->option->label))
+		if ( isset($Item->option->label) )
 			$this->optionlabel = $Item->option->label;
+
+		$this->price = $Item->option->id;
+
+		if ( ! empty($this->download) ) $this->keygen();
+		$this->download = (int)$this->download->id; // Convert download property to integer ID
 
 		$this->addons = 'no';
 		if (empty($Item->addons) || !is_array($Item->addons)) return true;
@@ -65,9 +70,9 @@ class Purchased extends DatabaseObject {
 		$this->addons = $addons;
 	}
 
-	function save() {
+	function save () {
 		$addons = $this->addons;					// Save current addons model
-		if (!empty($addons)) $this->addons = "yes";	// convert property to usable flag
+		if (!empty($addons) && is_array($addons)) $this->addons = 'yes';	// convert property to usable flag
 		parent::save();
 		if (!empty($addons) && is_array($addons)) {
 			foreach ($addons as $Addon) {
@@ -75,13 +80,32 @@ class Purchased extends DatabaseObject {
 				$Addon->save();
 			}
 		}
+
+		// Update sold tallies
+		if (!empty($this->product)) {
+			$summary = DatabaseObject::tablename(ProductSummary::$table);
+			DB::query("UPDATE $summary SET sold=sold+$this->quantity,grossed=grossed+$this->total WHERE product='$this->product'");
+		}
+
 		$this->addons = $addons; // restore addons model
 	}
 
+	function delete () {
+		$table = DatabaseObject::tablename(MetaObject::$table);
+		DB::query("DELETE LOW_PRIORITY FROM $table WHERE parent='$this->id' AND context='purchased'");
+		parent::delete();
+	}
+
 	function keygen () {
-		$message = $this->name.$this->purchase.$this->product.$this->price.$this->download;
+		$message = ShoppCustomer()->email.serialize($this).current_time('mysql');
 		$key = sha1($message);
-		if (empty($key)) $key = md5($message);
+
+		$limit = 25; $c = 0;
+		while ((int)DB::query("SELECT count(*) AS found FROM $this->_table WHERE dkey='$key'",'auto','col','found') > 0) {
+			$key = sha1($message.rand());
+			if ($c++ > $limit) break;
+		}
+
 		$this->dkey = $key;
 		do_action_ref_array('shopp_download_keygen',array(&$this));
 	}

@@ -1,9 +1,11 @@
 <div class="wrap shopp">
 	<div class="icon32"></div>
 	<h2><?php _e('Categories','Shopp'); ?> <a href="<?php echo esc_url(add_query_arg(array_merge(stripslashes_deep($_GET),array('page'=>$this->Admin->pagename('categories'),'id'=>'new')),admin_url('admin.php'))); ?>" class="button add-new"><?php _e('New Category','Shopp'); ?></a></h2>
-	<?php if (!empty($this->Notice)): ?><div id="message" class="updated fade"><p><?php echo $this->Notice; ?></p></div><?php endif; ?>
 
-	<form action="" id="categories" method="get">
+	<?php do_action('shopp_admin_notice'); ?>
+
+	<form action="<?php echo esc_url($url); ?>" id="categories" method="get">
+	<?php include('navigation.php'); ?>
 	<div>
 		<input type="hidden" name="page" value="<?php echo $this->Admin->pagename('categories'); ?>" />
 	</div>
@@ -14,22 +16,21 @@
 	</p>
 
 	<div class="tablenav">
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
 		<div class="alignleft actions">
 			<button type="submit" id="delete-button" name="deleting" value="category" class="button-secondary"><?php _e('Delete','Shopp'); ?></button>
-			&nbsp;
-			<a href="<?php echo esc_url(add_query_arg(array_merge(stripslashes_deep($_GET),array('page'=>$this->Admin->pagename('categories'),'a'=>'arrange')),admin_url('admin.php'))); ?>" class="button add-new"><?php _e('Arrange','Shopp'); ?></a>
 		</div>
+
+		<?php $ListTable->pagination( 'top' ); ?>
 		<div class="clear"></div>
 	</div>
 	<div class="clear"></div>
 
 	<table class="widefat" cellspacing="0">
 		<thead>
-		<tr><?php print_column_headers('shopp_page_shopp-categories'); ?></tr>
+		<tr><?php ShoppUI::print_column_headers('shopp_page_shopp-categories'); ?></tr>
 		</thead>
 		<tfoot>
-		<tr><?php print_column_headers('shopp_page_shopp-categories',false); ?></tr>
+		<tr><?php ShoppUI::print_column_headers('shopp_page_shopp-categories',false); ?></tr>
 		</tfoot>
 	<?php if (sizeof($Categories) > 0): ?>
 		<tbody id="categories-table" class="list categories">
@@ -52,19 +53,25 @@
 					admin_url('admin.php')));
 
 		$CategoryName = empty($Category->name)?'('.__('no category name','Shopp').')':$Category->name;
+
 		?>
 		<tr<?php if (!$even) echo " class='alternate'"; $even = !$even; ?>>
 			<th scope='row' class='check-column'><input type='checkbox' name='delete[]' value='<?php echo $Category->id; ?>' /></th>
-			<td><a class='row-title' href='<?php echo $editurl; ?>' title='<?php _e('Edit','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;'><?php echo str_repeat("&#8212; ",$Category->depth); echo esc_html($CategoryName); ?></a>
+			<td><a class='row-title' href='<?php echo $editurl; ?>' title='<?php _e('Edit','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;'><?php echo str_repeat("&#8212; ",$Category->level); echo esc_html($CategoryName); ?></a>
 				<div class="row-actions">
 					<span class='edit'><a href="<?php echo $editurl; ?>" title="<?php _e('Edit','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;"><?php _e('Edit','Shopp'); ?></a> | </span>
 					<span class='delete'><a class='submitdelete' title='<?php _e('Delete','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;' href="<?php echo $deleteurl; ?>" rel="<?php echo $Category->id; ?>"><?php _e('Delete','Shopp'); ?></a> | </span>
-					<span class='view'><a href="<?php echo shoppurl(SHOPP_PRETTYURLS?"category/$Category->uri":array('shopp_category'=>$Category->id)); ?>" title="<?php _e('View','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;" rel="permalink" target="_blank"><?php _e('View','Shopp'); ?></a></span>
+					<span class='view'><a href="<?php echo shoppurl( '' == get_option('permalink_structure') ? array('s_cat'=>$Category->id) : "category/$Category->slug" ); ?>" title="<?php _e('View','Shopp'); ?> &quot;<?php echo esc_attr($CategoryName); ?>&quot;" rel="permalink" target="_blank"><?php _e('View','Shopp'); ?></a></span>
 				</div>
 			</td>
-			<td width="5%" class="num links column-links<?php echo in_array('links',$hidden)?' hidden':''; ?>"><?php echo $Category->total; ?></td>
-			<td width="5%" class="templates column-templates<?php echo ($Category->spectemplate == "on")?' spectemplates':''; echo in_array('templates',$hidden)?' hidden':''; ?>">&nbsp;</td>
-			<td width="5%" class="menus column-menus<?php echo ($Category->facetedmenus == "on")?' facetedmenus':''; echo in_array('menus',$hidden)?' hidden':''; ?>">&nbsp;</td>
+			<td class="slug column-slug<?php echo in_array('links',$hidden)?' hidden':''; ?>"><?php echo $Category->slug; ?></td>
+			<td width="5%" class="num products column-products<?php echo in_array('links',$hidden)?' hidden':''; ?>"><?php echo $Category->count; ?></td>
+			<td width="5%" class="num templates column-templates<?php echo in_array('templates',$hidden)?' hidden':''; ?>">
+				<div class="checkbox"><?php if (isset($Category->spectemplates) && 'on' == $Category->spectemplates): ?><div class="checked">&nbsp;</div><?php else: ?>&nbsp;<?php endif; ?></div>
+			</td>
+			<td width="5%" class="num menus column-menus<?php echo in_array('menus',$hidden)?' hidden':''; ?>">
+				<div class="checkbox"><?php if (isset($Category->facetedmenus) && 'on' == $Category->facetedmenus): ?><div class="checked">&nbsp;</div><?php else: ?>&nbsp;<?php endif; ?></div>
+			</td>
 		</tr>
 		<?php endforeach; ?>
 		</tbody>
@@ -74,7 +81,7 @@
 	</table>
 	</form>
 	<div class="tablenav">
-		<?php if ($page_links) echo "<div class='tablenav-pages'>$page_links</div>"; ?>
+		<?php $ListTable->pagination( 'bottom' ); ?>
 		<div class="clear"></div>
 	</div>
 </div>

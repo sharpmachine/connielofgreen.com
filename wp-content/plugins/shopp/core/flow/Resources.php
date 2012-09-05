@@ -12,8 +12,6 @@
  * @subpackage resources
  **/
 class Resources {
-
-	var $Settings = false;
 	var $request = array();
 
 	/**
@@ -23,16 +21,13 @@ class Resources {
 	 *
 	 * @return void
 	 **/
-	function __construct () {
-		global $Shopp,$wp;
-		if (empty($wp->query_vars) && !(defined('WP_ADMIN') && isset($_GET['src']))) return;
+	function __construct ( $request = array() ) {
 
-		$this->Settings = &$Shopp->Settings;
+		if (empty($request) && !( defined('WP_ADMIN') && isset($request['src']) ))
+			return;
 
-		if (empty($wp->query_vars)) $this->request = $_GET;
-		else $this->request = $wp->query_vars;
+		$this->request = empty($request)?$_GET:$request;
 
-		add_action('shopp_resource_category_rss',array(&$this,'category_rss'));
 		add_action('shopp_resource_download',array(&$this,'download'));
 
 		// For secure, backend lookups
@@ -47,24 +42,6 @@ class Resources {
 		if ( !empty( $this->request['src'] ) )
 			do_action( 'shopp_resource_' . $this->request['src'] );
 
-		die('-1');
-	}
-
-	/**
-	 * Handles RSS-feed requests
-	 *
-	 * @author Jonathan Davis
-	 * @since 1.1
-	 *
-	 * @return void Description...
-	 **/
-	function category_rss () {
-		global $Shopp;
-		require_once(SHOPP_FLOW_PATH.'/Storefront.php');
-		$Storefront = new Storefront();
-		header("Content-type: application/rss+xml; charset=utf-8");
-		$Storefront->catalog($this->request);
-		echo shopp_rss($Shopp->Category->rss());
 		exit();
 	}
 
@@ -86,9 +63,9 @@ class Resources {
 			 	array_keys(array_merge($Purchase,$Purchased));
 			$_POST['settings']['purchaselog_headers'] = "on";
 		}
-		$this->Settings->saveform();
+		shopp_set_formsettings(); // Save workflow setting
 
-		$format = $this->Settings->get('purchaselog_format');
+		$format = shopp_setting('purchaselog_format');
 		if (empty($format)) $format = 'tab';
 
 		switch ($format) {
@@ -113,16 +90,16 @@ class Resources {
 		if (!current_user_can('shopp_export_customers')) exit();
 		if (!isset($_POST['settings']['customerexport_columns'])) {
 			$Customer = Customer::exportcolumns();
-			$Billing = Billing::exportcolumns();
-			$Shipping = Shipping::exportcolumns();
+			$Billing = BillingAddress::exportcolumns();
+			$Shipping = ShippingAddress::exportcolumns();
 			$_POST['settings']['customerexport_columns'] =
 			 	array_keys(array_merge($Customer,$Billing,$Shipping));
 			$_POST['settings']['customerexport_headers'] = "on";
 		}
 
-		$this->Settings->saveform();
+		shopp_set_formsettings(); // Save workflow setting
 
-		$format = $this->Settings->get('customerexport_format');
+		$format = shopp_setting('customerexport_format');
 		if (empty($format)) $format = 'tab';
 
 		switch ($format) {
@@ -151,48 +128,57 @@ class Resources {
 			$forbidden = false;
 			$Download = new ProductDownload($download);
 		} else {
-			$Order = &ShoppOrder();
+			$Order = ShoppOrder();
 
 			$Download = new ProductDownload();
 			$Download->loadby_dkey($download);
 
 			$Purchased = $Download->purchased();
+
 			$Purchase = new Purchase($Purchased->purchase);
+			$Purchase->load_events();
 
 			$name = $Purchased->name.(!empty($Purchased->optionlabel)?' ('.$Purchased->optionlabel.')':'');
 
+			$paidstatus = array( /* For 1.1 */ 'CHARGED', /* For 1.2+ */'captured' );
+
+			$accounts = ('none' != shopp_setting('account_system'));
+
 			$forbidden = false;
 			// Purchase Completion check
-			if ($Purchase->txnstatus != "CHARGED"
-				&& !SHOPP_PREPAYMENT_DOWNLOADS) {
+			if ( !in_array($Purchase->txnstatus,$paidstatus) && !SHOPP_PREPAYMENT_DOWNLOADS) {
 				new ShoppError(sprintf(__('"%s" cannot be downloaded because payment has not been received yet.','Shopp'),$name),'shopp_download_limit');
 				$forbidden = true;
 			}
 
 			// Account restriction checks
-			if ($this->Settings->get('account_system') != "none"
-				&& (!$Order->Customer->login
-				|| $Order->Customer->id != $Purchase->customer)) {
-					new ShoppError(__('You must login to download purchases.','Shopp'),'shopp_download_limit');
-					shopp_redirect(shoppurl(false,'account'));
+			if ($accounts && !ShoppCustomer()->logged_in()) {
+				new ShoppError(__('You must login to download purchases.','Shopp'),'shopp_download_limit');
+				$forbidden = true;
+			}
+
+			// File owner authorization check
+			if ($accounts && ShoppCustomer()->id != $Purchase->customer) {
+				new ShoppError(__('You are not authorized to download the requested file.','Shopp'),'shopp_download_unauthorized');
+				$forbidden = true;
 			}
 
 			// Download limit checking
-			if ($this->Settings->get('download_limit') // Has download credits available
-				&& $Purchased->downloads+1 > $this->Settings->get('download_limit')) {
+			if (shopp_setting('download_limit') // Has download credits available
+				&& $Purchased->downloads+1 > shopp_setting('download_limit')) {
 					new ShoppError(sprintf(__('"%s" is no longer available for download because the download limit has been reached.','Shopp'),$name),'shopp_download_limit');
 					$forbidden = true;
 				}
 
 			// Download expiration checking
-			if ($this->Settings->get('download_timelimit') // Within the timelimit
-				&& $Purchased->created+$this->Settings->get('download_timelimit') < mktime() ) {
+			if (shopp_setting('download_timelimit') // Within the timelimit
+				&& $Purchased->created+shopp_setting('download_timelimit') < current_time('timestamp') ) {
 					new ShoppError(sprintf(__('"%s" is no longer available for download because it has expired.','Shopp'),$name),'shopp_download_limit');
 					$forbidden = true;
 				}
 
 			// IP restriction checks
-			if ($this->Settings->get('download_restriction') == "ip"
+			if (shopp_setting('download_restriction') == "ip"
 				&& !empty($Purchase->ip)
 				&& $Purchase->ip != $_SERVER['REMOTE_ADDR']) {
 					new ShoppError(sprintf(__('"%s" cannot be downloaded because your computer could not be verified as the system the file was purchased from.','Shopp'),$name),'shopp_download_limit');
@@ -202,18 +188,28 @@ class Resources {
 			do_action_ref_array('shopp_download_request',array(&$Purchased));
 		}
 
-		if ($forbidden) {
-			shopp_redirect(shoppurl(false,'account'));
+		if (apply_filters('shopp_download_forbidden',$forbidden)) {
+			shopp_redirect(add_query_arg('downloads','',shoppurl(false,'account')),true,303);
 		}
 
-		if ($Download->download()) {
-			if ($Purchased !== false) {
-				$Purchased->downloads++;
-				$Purchased->save();
-				do_action_ref_array('shopp_download_success',array(&$Purchased));
-			}
-			exit();
+		// Send the download
+		$download = $Download->download();
+
+		if (is_a($download,'ShoppError')) {
+			// If the result is an error redirect to the account downloads page
+			shopp_redirect(add_query_arg('downloads','',shoppurl(false,'account')),true,303);
+		} else {
+			do_action_ref_array('shopp_download_success',array(&$Purchased,$Purchase,$Download)); // @deprecated use shopp_download_order_event instead
+
+			shopp_add_order_event($Purchase->id,'download',array(
+				'purchased' => $Purchased->id,		// Purchased line item ID (or add-on meta record ID)
+				'download' => $Download->id,		// Download ID (meta record)
+				'ip' => ShoppShopping()->ip,		// IP address of the download
+				'customer' => ShoppCustomer()->id	// Authenticated customer
+			));
 		}
+
+		exit();
 	}
 
 	/**
@@ -227,8 +223,9 @@ class Resources {
 	function help () {
 		if (!isset($_GET['id'])) return;
 
-		$Settings =& ShoppSettings();
-		list($status,$key) = $Settings->get('updatekey');
+		$keysetting = Shopp::keysetting();
+		$key = $keysetting['k'];
+
 		$site = get_bloginfo('siteurl');
 
 		$request = array("ShoppScreencast" => $_GET['id'],'key'=>$key,'site'=>$site);

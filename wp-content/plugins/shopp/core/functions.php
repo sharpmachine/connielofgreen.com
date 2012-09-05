@@ -10,6 +10,8 @@
  * @package shopp
  **/
 
+shopp_default_timezone();
+
 /**
  * Converts timestamps to formatted localized date/time strings
  *
@@ -88,6 +90,27 @@ function _object_r ($object) {
 }
 
 /**
+ * _var_dump
+ *
+ * like _object_r, but in var_dump format.  Useful when you need to know both object and scalar types.
+ *
+ * @author John Dillick
+ * @since 1.2
+ *
+ * @return string var_dump output
+ **/
+if ( ! function_exists('_var_dump') ) {
+	function _var_dump() {
+		$args = func_get_args();
+		ob_start();
+		var_dump($args);
+		$ret_val = ob_get_contents();
+		ob_end_clean();
+		return $ret_val;
+	}
+}
+
+/**
  * Appends a string to the end of URL as a query string
  *
  * @author Jonathan Davis
@@ -119,6 +142,28 @@ function add_storefrontjs ($script,$global=false) {
 		if (!isset($Storefront->behaviors['global'])) $Storefront->behaviors['global'] = array();
 		$Storefront->behaviors['global'][] = trim($script);
 	} else $Storefront->behaviors[] = $script;
+}
+
+/**
+ * Filters associative array with a mask array of keys to keep
+ *
+ * Compares the keys of the associative array to values in the mask array and
+ * keeps only the elements of the array that exist as a value of the mask array.
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param array $array The array to filter
+ * @param array $mask A list of keys to keep
+ * @return array The filtered array
+ **/
+function array_filter_keys ($array,$mask) {
+	if ( !is_array($array) ) return $array;
+
+	foreach ($array as $key => $value)
+		if ( !in_array($key,$mask) ) unset($array[$key]);
+
+	return $array;
 }
 
 /**
@@ -179,14 +224,10 @@ function auto_ranges ($avg,$max,$min) {
 function convert_unit ($value = 0, $unit, $from=false) {
 	if ($unit == $from || $value == 0) return $value;
 
-	if (!$from) {
-		// If no originating unit specified, use correlating system preferences
-		$Settings =& ShoppSettings();
-		$defaults = array(
-			'mass' => $Settings->get('weight_unit'),
-			'dimension' => $Settings->get('dimension_unit')
-		);
-	}
+	$defaults = array(
+		'mass' => shopp_setting('weight_unit'),
+		'dimension' => shopp_setting('dimension_unit')
+	);
 
 	// Conversion table to International System of Units (SI)
 	$table = array(
@@ -197,6 +238,9 @@ function convert_unit ($value = 0, $unit, $from=false) {
 			'ft' => 0.3048, 'in' => 0.0254, 'mm' => 0.001, 'cm' => 0.01, 'm' => 1
 		)
 	);
+
+	if ( $from && in_array( $from, array_keys($table['mass']) ) ) $defaults['mass'] = $from;
+	if ( $from && in_array( $from, array_keys($table['dimension']) ) ) $defaults['dimension'] = $from;
 
 	$table = apply_filters('shopp_unit_conversion_table',$table);
 
@@ -251,7 +295,6 @@ function copy_shopp_templates ($src,$target) {
  *
  * @author Ashley Roll {@link ash@digitalnemesis.com}, Scott Dattalo
  * @since 1.1
- * @todo Implement using dechex() to encode/compress strings (e.g. faceted menu filter keys)
  *
  * @return int The checksum polynomial
  **/
@@ -285,6 +328,8 @@ function remove_class_actions ( $tags = false, $class = 'stdClass', $priority = 
 	if ( false === $tags ) { return; }
 
 	foreach ( (array) $tags as $tag) {
+		if ( ! isset($wp_filter[$tag]) ) continue;
+
 		foreach ( $wp_filter[$tag] as $pri_index => $callbacks ) {
 			if ( $priority !== $pri_index && false !== $priority ) { continue; }
 			foreach( $callbacks as $idx => $callback ) {
@@ -300,34 +345,40 @@ function remove_class_actions ( $tags = false, $class = 'stdClass', $priority = 
 }
 
 
+
 /**
- * Determines the currency format for the store
+ * Determines the currency format to use
  *
- * If a format is provided, it is passed through. Otherwise the locale-based
- * currency format is used or if no locale setting is available
- * a default of $#,###.## is returned.  Any formatting settings that are
- * missing will use settings from the default.
+ * Uses the locale-based currency format (set by the Base of Operations setting)
+ * as a base format. If one is not set, a default format of $#,###.## is used. If
+ * a $format is provided, it will be merged with the base format overriding any
+ * specific settings made while keeping the settings from the base format that are
+ * not specified.
  *
  * The currency format settings consist of a named array with the following:
- * cpos boolean The position of the currency symbol: true to prefix the number, false for suffix
- * currency string The currency symbol
- * precision int The decimal precision
- * decimals string The decimal delimiter
- * thousands string The thousands separator
+ * cpos 		boolean	The position of the currency symbol: true to prefix the number, false for suffix
+ * currency		string	The currency symbol
+ * precision	int		The decimal precision
+ * decimals		string	The decimal delimiter
+ * thousands	string	The thousands separator
  *
  * @author Jonathan Davis
  * @since 1.1
+ * @version 1.2
  *
  * @param array $format (optional) A currency format settings array
  * @return array Format settings array
  **/
 function currency_format ($format=false) {
 	$default = array("cpos"=>true,"currency"=>"$","precision"=>2,"decimals"=>".","thousands" => ",","grouping"=>3);
-	if ($format !== false) return array_merge($default,$format);
-	$Settings = &ShoppSettings();
-	$locale = $Settings->get('base_operations');
+	$locale = shopp_setting('base_operations');
+
+	if (!isset($locale['currency']) || !isset($locale['currency']['format'])) return $default;
 	if (empty($locale['currency']['format']['currency'])) return $default;
-	return array_merge($default,$locale['currency']['format']);
+
+	$f = array_merge($default,$locale['currency']['format']);
+	if ($format !== false) $f = array_merge($f,(array)$format);
+	return $f;
 }
 
 /**
@@ -415,6 +466,19 @@ function date_format_order ($fields=false) {
 	if ($fields) $_ = array_merge($_,$default,$_);
 
 	return $_;
+}
+
+function debug_caller () {
+	$backtrace  = debug_backtrace();
+	$stack = array();
+
+	foreach ( $backtrace as $caller )
+		$stack[] = isset( $caller['class'] ) ?
+			"{$caller['class']}->{$caller['function']}"
+			: $caller['function'];
+
+	return join( ', ', $stack );
+
 }
 
 /**
@@ -624,28 +688,24 @@ function floatvalue ($value, $round=true, $format=false) {
 	$format = currency_format($format);
 	extract($format,EXTR_SKIP);
 
-	$v = (float)$value; // Try interpretting as a float and see if we have a valid value
+	$float = false;
+	if (is_float($value)) $float = $value;
 
-	// If a valid float already, pass the value through
-	// The variety of currency formats makes determining a valid float very difficult
-	if (is_float($value) || (			// Original $value is a float, passthru
-		is_float($v) 					// $v correctly casts to a float
-		&& $v > 0 && (					// The casted float value is not 0
-				$decimals == '.' || 	// not a normalized float if the decimal separator is in the value
-				!empty($decimals) && $decimals != '.' && strpos($value,$decimals) === false	// and is not a period-character
-			) && (						// Not a valid float if the thousands separator is present at all
-				strpos($value,$thousands) === false
-			)
-		)) return floatval($round?round($value,$precision):$value);
+	$value = preg_replace('/(\D\.|[^\d\,\.\-])/','',$value); // Remove any non-numeric string data
+	$value = preg_replace('/\\'.$thousands.'/','',$value); // Remove thousands
+	$v = (float)$value;
 
-	$value = preg_replace("/(\D\.|[^\d\,\.])/","",$value); // Remove any non-numeric string data
-	$value = preg_replace("/^\./","",$value); // Remove any decimals at the beginning of the string
-	$value = preg_replace("/\\".$thousands."/","",$value); // Remove thousands
+	if ('.' == $decimals && $v > 0) $float = $v;
 
-	if ($precision > 0) // Don't convert decimals if not required
-		$value = preg_replace("/\\".$decimals."/",".",$value); // Convert decimal delimter
+	if (false === $float) {
+		$value = preg_replace('/^\./','',$value); // Remove any decimals at the beginning of the string
+		if ($precision > 0) // Don't convert decimals if not required
+			$value = preg_replace('/\\'.$decimals.'/','.',$value); // Convert decimal delimter
 
-	return $round?round(floatval($value),$precision):floatval($value);
+		$float = (float)$value;
+	}
+
+	return $round?round($float,$precision):$float;
 }
 
 /**
@@ -658,7 +718,7 @@ function floatvalue ($value, $round=true, $format=false) {
  * @return string $url The secure URL
  **/
 function force_ssl ($url,$rewrite=false) {
-	if(is_shopp_secure() || $rewrite)
+	if(is_ssl() || $rewrite)
 		$url = str_replace('http://', 'https://', $url);
 	return $url;
 }
@@ -701,6 +761,21 @@ if (!function_exists('href_add_query_arg')) {
 }
 
 /**
+ * Returns readable php.ini data size settings
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param string $name The name of the setting to read
+ * @return string The readable config size
+ **/
+function ini_size ($name) {
+	$setting = ini_get($name);
+	if (preg_match('/\d+\w+/',$setting) !== false) return $setting;
+	else readableFileSize($setting);
+}
+
+/**
  * Generates attribute markup for HTML inputs based on specified options
  *
  * @author Jonathan Davis
@@ -713,37 +788,41 @@ if (!function_exists('href_add_query_arg')) {
 function inputattrs ($options,$allowed=array()) {
 	if (!is_array($options)) return "";
 	if (empty($allowed)) {
-		$allowed = array("autocomplete","accesskey","alt","checked","class","disabled","format",
-			"minlength","maxlength","readonly","required","size","src","tabindex",
-			"title","value");
+		$allowed = array('autocomplete','accesskey','alt','checked','class','disabled','format',
+			'minlength','maxlength','readonly','required','size','src','tabindex','cols','rows',
+			'title','value');
 	}
 	$string = "";
 	$classes = "";
+
 	if (isset($options['label']) && !isset($options['value'])) $options['value'] = $options['label'];
 	foreach ($options as $key => $value) {
 		if (!in_array($key,$allowed)) continue;
 		switch($key) {
 			case "class": $classes .= " $value"; break;
+			case "checked":
+				if (str_true($value)) $string .= ' checked="checked"';
+				break;
 			case "disabled":
-				if (value_is_true($value)) {
+				if (str_true($value)) {
 					$classes .= " disabled";
 					$string .= ' disabled="disabled"';
 				}
 				break;
 			case "readonly":
-				if (value_is_true($value)) {
+				if (str_true($value)) {
 					$classes .= " readonly";
 					$string .= ' readonly="readonly"';
 				}
 				break;
-			case "required": if (value_is_true($value)) $classes .= " required"; break;
+			case "required": if (str_true($value)) $classes .= " required"; break;
 			case "minlength": $classes .= " min$value"; break;
 			case "format": $classes .= " $value"; break;
 			default:
 				$string .= ' '.$key.'="'.esc_attr($value).'"';
 		}
 	}
-	if (!empty($classes)) $string .= ' class="'.trim($classes).'"';
+	if (!empty($classes)) $string .= ' class="'.esc_attr(trim($classes)).'"';
  	return $string;
 }
 
@@ -756,70 +835,33 @@ function inputattrs ($options,$allowed=array()) {
  * @return boolean Returns true if a bot user agent is detected
  **/
 function is_robot() {
-	$bots = array("Googlebot","TeomaAgent","Zyborg","Gulliver","Architext spider","FAST-WebCrawler","Slurp","Ask Jeeves","ia_archiver","Scooter","Mercator","crawler@fast","Crawler","InfoSeek sidewinder","Lycos_Spider_(T-Rex)","Fluffy the Spider","Ultraseek","MantraAgent","Moget","MuscatFerret","VoilaBot","Sleek Spider","KIT_Fireball","WebCrawler");
+	$bots = array('Googlebot','TeomaAgent','Zyborg','Gulliver','Architext spider','FAST-WebCrawler','Slurp','Ask Jeeves','ia_archiver','Scooter','Mercator','crawler@fast','Crawler','InfoSeek sidewinder','Lycos_Spider_(T-Rex)','Fluffy the Spider','Ultraseek','MantraAgent','Moget','MuscatFerret','VoilaBot','Sleek Spider','KIT_Fireball','WebCrawler');
+	if (!isset($_SERVER['HTTP_USER_AGENT'])) return apply_filters('shopp_agent_is_robot', true, '');
 	foreach($bots as $bot)
-		if (strpos(strtolower($_SERVER['HTTP_USER_AGENT']),strtolower($bot))) return true;
-	return false;
+		if (strpos(strtolower($_SERVER['HTTP_USER_AGENT']),strtolower($bot))) return apply_filters('shopp_agent_is_robot', true, esc_attr($_SERVER['HTTP_USER_AGENT']));
+	return apply_filters('shopp_agent_is_robot', false, esc_attr($_SERVER['HTTP_USER_AGENT']));
 }
 
 /**
- * Used to test user level for (to be deprecated) SHOPP_USERLEVEL macro
+ * Used to test user level for deprecated SHOPP_USERLEVEL macro
  *
  * Utility function for checking to see if SHOPP_USERLEVEL is defined and whether current user has
- * that level of access.
+ * that level of access. This function is deprecated, and should not be used.
  *
  * @author John Dillick
  * @since 1.1
- * @deprecated
+ * @deprecated 1.2
  *
- * @return bool SHOPP_USERLEVEL is defined and the user has privs at that level
+ * @return null
  **/
-function is_shopp_userlevel () {
-	return defined('SHOPP_USERLEVEL') && current_user_can('SHOPP_USERLEVEL');
-}
+function is_shopp_userlevel () { return; }
+
 
 /**
- * Determines if the requested page is a Shopp page or if it matches a given Shopp page
- *
- * @author Jonathan Davis
- * @since 1.0
- *
- * @param string $page (optional) Page name to look for in Shopp's page registry
- * @return boolean
- **/
-function is_shopp_page ($page=false) {
-	global $Shopp,$wp_query;
-
-	if (isset($wp_query->post->post_type) &&
-		$wp_query->post->post_type != "page") return false;
-
-	$pages = $Shopp->Settings->get('pages');
-
-	// Detect if the requested page is a Shopp page
-	if (!$page) {
-		foreach ($pages as $page)
-			if ($page['id'] == $wp_query->post->ID) return true;
-		return false;
-	}
-
-	// Determine if the visitor's requested page matches the provided page
-	if (!isset($pages[strtolower($page)])) return false;
-	$page = $pages[strtolower($page)];
-	if (isset($wp_query->post->ID) &&
-		$page['id'] == $wp_query->post->ID) return true;
-	return false;
-}
-
-/**
- * Detects SSL requests
- *
- * @author Jonathan Davis
- * @since 1.0
- *
- * @return boolean
+ * @deprecated Using WP function instead
  **/
 function is_shopp_secure () {
-	return (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) != "off");
+	return is_ssl();
 }
 
 /**
@@ -839,107 +881,88 @@ function linkencode ($url) {
 }
 
 /**
- * Read the wp-config file to import WP settings without loading all of WordPress
+ * Locates Shopp-supported template files
  *
- * @author Jonathan Davis, John Dillick
- * @since 1.1
- * @return boolean If the load was successful or not
- **/
-function load_shopps_wpconfig () {
-	global $table_prefix;
-
-	$configfile = 'wp-config.php';
-	$loadfile = 'wp-load.php';
-	$wp_config_path = $wp_abspath = false;
-
-	$syspath = explode('/',$_SERVER['SCRIPT_FILENAME']);
-	$uripath = explode('/',$_SERVER['SCRIPT_NAME']);
-	$rootpath = array_diff($syspath,$uripath);
-	$root = '/'.join('/',$rootpath);
-
-	$filepath = dirname(!empty($_SERVER['SCRIPT_FILENAME'])?$_SERVER['SCRIPT_FILENAME']:__FILE__);
-
-	if ( file_exists(sanitize_path($root).'/'.$loadfile))
-		$wp_abspath = $root;
-
-	if ( isset($_SERVER['SHOPP_WPCONFIG_PATH'])
-		&& file_exists(sanitize_path($_SERVER['SHOPP_WPCONFIG_PATH']).'/'.$configfile) ) {
-		// SetEnv SHOPP_WPCONFIG_PATH /path/to/wpconfig
-		// and SHOPP_ABSPATH used on webserver site config
-		$wp_config_path = $_SERVER['SHOPP_WPCONFIG_PATH'];
-
-	} elseif ( strpos($filepath, $root) !== false ) {
-		// Shopp directory has DOCUMENT_ROOT ancenstor, find wp-config.php
-		$fullpath = explode ('/', sanitize_path($filepath) );
-		while (!$wp_config_path && ($dir = array_pop($fullpath)) !== null) {
-			if (file_exists( sanitize_path(join('/',$fullpath)).'/'.$loadfile ))
-				$wp_abspath = join('/',$fullpath);
-			if (file_exists( sanitize_path(join('/',$fullpath)).'/'.$configfile ))
-				$wp_config_path = join('/',$fullpath);
-		}
-
-	} elseif ( file_exists(sanitize_path($root).'/'.$configfile) ) {
-		$wp_config_path = $root; // WordPress install in DOCUMENT_ROOT
-	} elseif ( file_exists(sanitize_path(dirname($root)).'/'.$configfile) ) {
-		$wp_config_path = dirname($root); // wp-config up one directory from DOCUMENT_ROOT
-	}
-
-	$wp_config_file = sanitize_path($wp_config_path).'/'.$configfile;
-	if ( $wp_config_path !== false )
-		$config = file_get_contents($wp_config_file);
-	else return false;
-
-	preg_match_all('/^\s*?(define\(\s*?\'(.*?)\'\s*?,\s*(.*?)\);)/m',$config,$defines,PREG_SET_ORDER);
-	foreach($defines as $defined) if (!defined($defined[2])) {
-		list($line,$line,$name,$value) = $defined;
-		$value = str_replace('__FILE__',"'$wp_abspath/$loadfile'",$value);
-		$value = safe_define_ev($value);
-
-		// Override ABSPATH with SHOPP_ABSPATH
-		if ($name == "ABSPATH" && isset($_SERVER['SHOPP_ABSPATH'])
-				&& file_exists(sanitize_path($_SERVER['SHOPP_ABSPATH']).'/'.$loadfile))
-			$value = rtrim(sanitize_path($_SERVER['SHOPP_ABSPATH']),'/').'/';
-		define($name,$value);
-	}
-
-	// Get the $table_prefix value
-	preg_match('/(\$table_prefix\s*?=.+?);/m',$config,$match);
-	$table_prefix = safe_define_ev($match[1]);
-
-	if(function_exists("date_default_timezone_set") && function_exists("date_default_timezone_get"))
-		@date_default_timezone_set(@date_default_timezone_get());
-
-	return true;
-}
-
-/**
- * Appends the blog id to the table prefix for multisite installs
+ * Uses WP locate_template() to add child-theme aware template support toggled
+ * by the theme template setting.
  *
  * @author Jonathan Davis
- * @since 1.1
+ * @since 1.2
  *
- * @return void
+ * @param array $template_names Array of template files to search for in priority order.
+ * @param bool $load (optional) If true the template file will be loaded if it is found.
+ * @param bool $require_once (optional) Whether to require_once or require. Default true. Has no effect if $load is false.
+ * @return string The full template file path, if one is located
  **/
-function shopp_ms_tableprefix () {
-	global $table_prefix;
+function locate_shopp_template ($template_names, $load = false, $require_once = false ) {
+	if ( !is_array($template_names) ) return '';
 
-	$domain = $_SERVER['HTTP_HOST'] = (strpos($_SERVER['HTTP_HOST'],':') !== false) ?
-	 				str_replace(array(':80',':443'),'',addslashes($_SERVER['HTTP_HOST'])):
-					addslashes($_SERVER['HTTP_HOST']);
+	$located = '';
 
-	if (strpos($_SERVER['HTTP_HOST'],':') !== false) die('Multisite only works without the port number in the URL.');
+	if ('off' != shopp_setting('theme_templates')) {
+		$templates = array_map('shopp_template_prefix',$template_names);
+		$located = locate_template($templates,false);
+	}
 
-	$domain = rtrim($domain, '.');
+	if ('' == $located) {
+		foreach ( $template_names as $template_name ) {
+			if ( !$template_name ) continue;
 
-	$path = preg_replace('|([a-z0-9-]+.php.*)|', '', $_SERVER['REQUEST_URI']);
-	$path = str_replace ('/wp-admin/', '/', $path);
-	$path = preg_replace('|(/[a-z0-9-]+?/).*|', '$1', $path);
+			if ( file_exists(SHOPP_PATH . '/templates' . '/' . $template_name)) {
+				$located = SHOPP_PATH . '/templates' . '/' . $template_name;
+				break;
+			}
 
-	$wpdb_blogs = $table_prefix.'blogs';
-	$db =& DB::get();
-	$r = $db->query("SELECT blog_id FROM $wpdb_blogs WHERE domain='$domain' AND path='$path' LIMIT 1");
-	if (!empty($r->blog_id))
-		$table_prefix .= $r->blog_id.'_';
+		}
+	}
+
+	if ( $load && '' != $located )
+		load_template( $located, $require_once );
+
+	return $located;
+}
+
+function lzw_compress ($s) {
+	$code = 256;
+	$dict = $out = array();
+	$size = strlen($s);
+	$w = $s{0};
+	for ($i = 1; $i < $size; $i++) {
+		$c = $s{$i};
+		if (isset($dict[ $w.$c ])) $w .= $c;
+		else {
+			$out[] = strlen($w) > 1 ? $dict[$w] : $w{0};
+			$dict[ $w.$c ] = $code++;
+			$w = $c;
+		}
+	}
+	$out[] = strlen($w) > 1 ? $dict[$w] : $w{0};
+	$out = array_map('chr',$out);
+	return join('',$out);
+}
+
+if (!function_exists('mkobject')) {
+	/**
+	 * Converts an associative array to a stdClass object
+	 *
+	 * Uses recursion to convert nested associative arrays to a
+	 * nested stdClass object while maintaing numeric indexed arrays
+	 * and converting associative arrays contained within the
+	 * numeric arrays
+	 *
+	 * @author Jonathan Davis
+	 *
+	 * @param array $data The associative array to convert
+	 * @return void
+	 **/
+	function mkobject (&$data) {
+		$numeric = false;
+		foreach ($data as $p => &$d) {
+			if (is_array($d)) mkobject($d);
+			if (is_int($p)) $numeric = true;
+		}
+		if (!$numeric) settype($data,'object');
+	}
 }
 
 /**
@@ -1011,20 +1034,30 @@ function mk24hour ($hour, $meridiem) {
  **/
 function menuoptions ($list,$selected=null,$values=false,$extend=false) {
 	if (!is_array($list)) return "";
-	$string = "";
+
+	$_ = array();
 	// Extend the options if the selected value doesn't exist
 	if ((!in_array($selected,$list) && !isset($list[$selected])) && $extend)
-		$string .= "<option value=\"$selected\">$selected</option>";
+		$_[] = '<option value="'.esc_attr($selected).'">'.esc_html($selected).'</option>';
 	foreach ($list as $value => $text) {
-		if ($values) {
-			if ($value == $selected) $string .= "<option value=\"$value\" selected=\"selected\">$text</option>";
-			else  $string .= "<option value=\"$value\">$text</option>";
-		} else {
-			if ($text == $selected) $string .= "<option selected=\"selected\">$text</option>";
-			else  $string .= "<option>$text</option>";
+
+		$valueattr = $selectedattr = '';
+
+		if ($values) $valueattr = ' value="'.esc_attr($value).'"';
+		if (($values && (string)$value === (string)$selected)
+			|| (!$values && (string)$text === (string)$selected))
+				$selectedattr = ' selected="selected"';
+		if (is_array($text)) {
+			$label = $value;
+			$_[] = '<optgroup label="'.esc_attr($label).'">';
+			$_[] = menuoptions($text,$selected,$values);
+			$_[] = '</optgroup>';
+			continue;
 		}
+		$_[] = "<option$valueattr$selectedattr>$text</option>";
+
 	}
-	return $string;
+	return join('',$_);
 }
 
 /**
@@ -1089,12 +1122,35 @@ function numeric_format ($number, $precision=2, $decimals='.', $separator=',', $
 	$whole = join($separator,$ng);
 	$whole = str_pad($whole,1,'0');
 
+	// echo BR.$fraction.BR;
+
 	$fraction = rtrim(substr($fraction,0,$precision),'0');
 	$fraction = str_pad($fraction,$precision,'0');
 
 	$n = $whole.(!empty($fraction)?$decimals.$fraction:'');
 
 	return $n;
+}
+
+/**
+ * Parse a US or Canadian telephone number
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param int $num The number to format
+ * @return array A list of phone number components
+ **/
+
+function parse_phone ($num) {
+	if (empty($num)) return '';
+	$raw = preg_replace('/[^\d]/','',$num);
+
+	if (strlen($raw) == 7) sscanf($raw, "%3s%4s", $prefix, $exchange);
+	if (strlen($raw) == 10) sscanf($raw, "%3s%3s%4s", $area, $prefix, $exchange);
+	if (strlen($raw) == 11) sscanf($raw, "%1s%3s%3s%4s",$country, $area, $prefix, $exchange);
+
+	return compact('country','area','prefix','exchange','raw');
 }
 
 /**
@@ -1107,13 +1163,9 @@ function numeric_format ($number, $precision=2, $decimals='.', $separator=',', $
  * @return string The formatted telephone number
  **/
 function phone ($num) {
-	if (empty($num)) return "";
-	$num = preg_replace("/[A-Za-z\-\s\(\)]/","",$num);
-
-	if (strlen($num) == 7) sscanf($num, "%3s%4s", $prefix, $exchange);
-	if (strlen($num) == 10) sscanf($num, "%3s%3s%4s", $area, $prefix, $exchange);
-	if (strlen($num) == 11) sscanf($num, "%1s%3s%3s%4s",$country, $area, $prefix, $exchange);
-	//if (strlen($num) > 11) sscanf($num, "%3s%3s%4s%s", $area, $prefix, $exchange, $ext);
+	if (empty($num)) return '';
+	$parsed = parse_phone($num);
+	extract($parsed);
 
 	$string = "";
 	$string .= (isset($country))?"$country ":"";
@@ -1122,7 +1174,6 @@ function phone ($num) {
 	$string .= (isset($exchange))?"-$exchange":"";
 	$string .= (isset($ext))?" x$ext":"";
 	return $string;
-
 }
 
 /**
@@ -1143,7 +1194,14 @@ function phone ($num) {
  **/
 function percentage ($amount,$format=false) {
 	$format = currency_format($format);
-	return numeric_format(round($amount,$format['precision']), $format['precision'], $format['decimals'], $format['thousands'], $format['grouping']).'%';
+	extract($format,EXTR_SKIP);
+	$float = floatvalue($amount,true,$format);
+	$percent = numeric_format($float, $precision, $decimals, $thousands, $grouping);
+	if (strpos($percent,$decimals) !== false) { // Only remove trailing 0's after the decimal
+		$percent = rtrim($percent,'0');
+		$percent = rtrim($percent, $decimals);
+	}
+	return "$percent%";
 }
 
 /**
@@ -1174,11 +1232,13 @@ function preg_e_callback ($matches) {
 function raw_request_url () {
 	return esc_url(
 		'http'.
-		(is_shopp_secure()?'s':'').
+		(is_ssl()?'s':'').
 		'://'.
 		$_SERVER['HTTP_HOST'].
 		$_SERVER['REQUEST_URI'].
-		(SHOPP_PRETTYURLS?((!empty($_SERVER['QUERY_STRING'])?'?':'').$_SERVER['QUERY_STRING']):'')
+		('' != get_option('permalink_structure') ? (
+			(!empty($_SERVER['QUERY_STRING']) ? '?' : '' ).$_SERVER['QUERY_STRING'] ):''
+		)
 	);
 }
 
@@ -1194,64 +1254,12 @@ function raw_request_url () {
  * @return string The formatted unit size
  **/
 function readableFileSize($bytes,$precision=1) {
-	$units = array(__("bytes","Shopp"),"KB","MB","GB","TB","PB");
+	$units = array(__('bytes','Shopp'),'KB','MB','GB','TB','PB');
 	$sized = $bytes*1;
 	if ($sized == 0) return $sized;
 	$unit = 0;
-	while ($sized > 1024 && ++$unit) $sized = $sized/1024;
+	while ($sized >= 1024 && ++$unit) $sized = $sized/1024;
 	return round($sized,$precision)." ".$units[$unit];
-}
-
-/**
- * Creates natural language amount of time from a specified timestamp to today
- *
- * The string includes the number of years, months, days, hours, minutes
- * and even seconds e.g.: 1 year, 5 months, 29 days , 23 hours and 59 minutes
- *
- * @author Timothy Hatcher
- * @since 1.0
- *
- * @param int $date The original timestamp
- * @return string The formatted time range
- **/
-function readableTime($date, $long = false) {
-
-	$secs = time() - $date;
-	if (!$secs) return false;
-	$i = 0; $j = 1;
-	$desc = array(1 => 'second',
-				  60 => 'minute',
-				  3600 => 'hour',
-				  86400 => 'day',
-
-				  604800 => 'week',
-				  2628000 => 'month',
-				  31536000 => 'year');
-
-
-	while (list($k,) = each($desc)) $breaks[] = $k;
-	sort($breaks);
-
-	while ($i < count($breaks) && $secs >= $breaks[$i]) $i++;
-	$i--;
-	$break = $breaks[$i];
-
-	$val = intval($secs / $break);
-	$retval = $val . ' ' . $desc[$break] . ($val>1?'s':'');
-
-	if ($long && $i > 0) {
-		$rest = $secs % $break;
-		$break = $breaks[--$i];
-		$rest = intval($rest/$break);
-
-		if ($rest > 0) {
-			$resttime = $rest.' '.$desc[$break].($rest > 1?'s':'');
-
-			$retval .= ", $resttime";
-		}
-	}
-
-	return $retval;
 }
 
 /**
@@ -1280,59 +1288,9 @@ function roundprice ($amount,$format=false) {
  * @param string $pkey PEM encoded RSA public key
  * @return string Encrypted binary data
  **/
-function rsa_encrypt($data, $pkey){
+function rsa_encrypt ($data, $pkey){
 	openssl_public_encrypt($data, $encrypted,$pkey);
 	return ($encrypted)?$encrypted:false;
-}
-
-/**
- * Safely interprets a single PHP statement for dynamic macro definitions
- *
- * Ensures that unsafe code cannot be arbitrarily executed by three levels
- * of protection: unsafe function blacklist, no anonymous functions,
- * no backtick operations, and no variable variables.
- *
- * Additionally, the use of create_function to interpret the code ensures
- * that executed code doesn't taint the rest of the runtime environment.
- *
- * An error is generated to help detect and debug problem macro definitions.
- *
- * @author Jonathan Davis
- * @since 1.1
- *
- * @param string $string A PHP statement to be interpreted
- * @return mixed The returned value
- **/
-function safe_define_ev ($string) {
-	$error = false;
-	$f = array(	'base64_decode','base64_encode','copy','create_function','curl_init',
-			'dl','exec','file_get_contents','fopen','fpassthru','include',
-			'include_once','ini_restore','leak','link','mail','passthru','pcntl_exec',
-			'pcntl_fork','pcntl_signal','pcntl_waitpid','pcntl_wexitstatus',
-			'pcntl_wifexited','pcntl_wifsignaled','pcntl_wifstopped','pcntl_wstopsig',
-			'pcntl_wtermsig','pfsockopen','phpinfo','popen','preg_replace','proc_get_status',
-			'proc_nice','proc_open','proc_terminate','readfile','register_shutdown_function',
-			'register_tick_function','require','require_once','shell_exec','socket_accept',
-			'socket_bind','socket_connect','socket_create','socket_create_listen',
-			'socket_create_pair','stream_socket_server','symlink','syslog','system');
-
-	if (preg_match('/('.join('|',$f).')\s*\(.*?\)/',$string) !== 0)
-		$error = "Unsafe function detected while interpreting a macro definition";
-	elseif (preg_match('/\$\w+\s*=\s*function\s*\(/',$string) !== 0)
-		$error = "Anoymous function detected while interpreting a macro definition";
-	elseif (preg_match('/(\`.+?\`)/',preg_replace('/(\'.*?\'|".*?")/m','',$string)) !== 0)
-		$error = "Unsafe backtick operator usage detected while interpreting a macro definition";
-	elseif (strpos($string,'$$') !== false)
-		$error = "Unsafe variable detected while interpreting a macro definition";
-
-	if ($error !== false) {
-		trigger_error($error,E_USER_ERROR);
-		return '';
-	}
-
-	$code = create_function('','return ('.$string.');');
-	if (empty($code)) return '';
-	return $code();
 }
 
 if(!function_exists('sanitize_path')){
@@ -1419,18 +1377,110 @@ function scan_money_format ($format) {
 }
 
 /**
+ * Wrapper function to set the WP and WP_Query query_vars
+ *
+ * This wrapper is to make it easier to set query_vars in the
+ * WP global object and the WP_Query simultaneously. This makes
+ * it easier to manipulate requests as necessary
+ * (especially in the case of Shopp searches)
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param string $var Name of the var to set
+ * @param string $value Value to set
+ * @return void
+ **/
+function set_wp_query_var ($var,$value) {
+	global $wp;
+	$wp->set_query_var($var,$value);
+	set_query_var($var,$value);
+}
+
+/**
+ * Wrapper function to get a WP query_var
+ *
+ * This is used only in contexts where the WP_Query public API
+ * call get_query_var() doesn't work (specifically during parse_request)
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param string $key The name of the query_var to retrieve
+ * @return mixed
+ **/
+function get_wp_query_var ($key) {
+	global $wp;
+	if (isset($wp->query_vars[$key]))
+		return $wp->query_vars[$key];
+}
+
+/**
  * Wraps mark-up in a #shopp container, if needed
  *
  * @author Jonathan Davis
  * @since 1.1
  *
  * @param string $string The content markup to be wrapped
+ * @param array $classes CSS classes to add to the container
  * @return string The wrapped markup
  **/
 function shoppdiv ($string) {
-	if (strpos($string,'<div id="shopp">') === false)
-		return '<div id="shopp">'.$string.'</div>';
+
+	$classes = array();
+
+	$views = array('list','grid');
+	$view = shopp_setting('default_catalog_view');
+	if (empty($view)) $view = 'grid';
+
+	// Handle catalog view style cookie preference
+	if (isset($_COOKIE['shopp_catalog_view'])) $view = $_COOKIE['shopp_catalog_view'];
+	if (in_array($view,$views)) $classes[] = $view;
+
+	// Add collection slug
+	$Collection = ShoppCollection();
+	if (!empty($Collection))
+		if ($category = shopp('collection','get-slug')) $classes[] = $category;
+
+	// Add product id & slug classes
+	$Product = ShoppProduct();
+	if (!empty($Product)) {
+		if ($productid = shopp('product','get-id')) $classes[] = 'product-'.$productid;
+		if ($product = shopp('product','get-slug')) $classes[] = $product;
+	}
+
+	$classes = apply_filters('shopp_content_container_classes',$classes);
+	$classes = esc_attr(join(' ',$classes));
+
+	if (false === strpos($string,'<div id="shopp"'))
+		return '<div id="shopp"'.(!empty($classes)?' class="'.$classes.'"':'').'>'.$string.'</div>';
 	return $string;
+}
+
+function shopp_daytimes () {
+	$args = func_get_args();
+	$periods = array("h"=>3600,"d"=>86400,"w"=>604800,"m"=>2592000);
+
+	$total = 0;
+	foreach ($args as $timeframe) {
+		if (empty($timeframe)) continue;
+		list($i,$p) = sscanf($timeframe,'%d%s');
+		$total += $i*$periods[$p];
+	}
+	return ceil($total/$periods['d']).'d';
+}
+
+/**
+ * Sets the default timezone based on the WordPress option (if available)
+ *
+ * @author Jonathan Davis
+ * @since 1.1
+ *
+ * @return void
+ **/
+function shopp_default_timezone () {
+	if (function_exists('date_default_timezone_set'))
+		date_default_timezone_set('UTC');
 }
 
 /**
@@ -1450,21 +1500,13 @@ function shoppdiv ($string) {
  **/
 function shopp_email ($template,$data=array()) {
 
-	if (strpos($template,"\r\n") !== false) $f = explode("\r\n",$template);
-	elseif (strpos($template,"\n") !== false) $f = explode("\n",$template);
-	else {
-		if (strpos($template,".php") !== false) {
-			// Parse a PHP template
-			ob_start();
-			include($template);
-			$content = ob_get_contents();
-			ob_end_clean();
-			if (strpos($content,"\r\n") !== false) $f = explode("\r\n",$content);
-			elseif (strpos($content,"\n") !== false) $f = explode("\n",$content);
-		} elseif (file_exists($template)) $f = file($template);	// Load an HTML/text template
-		else new ShoppError(__("Could not open the email template because the file does not exist or is not readable.","Shopp"),'email_template',SHOPP_ADMIN_ERR,array('template'=>$template));
-	}
-
+	$debug = false;
+	$in_body = false;
+	$headers = array();
+	$message = '';
+	$to = '';
+	$subject = '';
+	$protected = array('from','to','subject','cc','bcc');
 	$replacements = array(
 		"$" => "\\\$",		// Treat $ signs as literals
 		"€" => "&euro;",	// Fix euro symbols
@@ -1473,16 +1515,26 @@ function shopp_email ($template,$data=array()) {
 		"¤" => "&curren;"	// Fix generic currency symbols
 	);
 
-	$debug = false;
-	$in_body = false;
-	$headers = "";
-	$message = "";
-	$to = "";
-	$subject = "";
-	$protected = array("from","to","subject","cc","bcc");
+	if (false == strpos($template,"\n") && file_exists($template)) {
+		$templatefile = $template;
+		// Include to parse the PHP and Theme API tags
+		ob_start();
+		include($templatefile);
+		$template = ob_get_contents();
+		ob_end_clean();
+
+		if (empty($template))
+			return new ShoppError(__('Could not open the email template because the file does not exist or is not readable.','Shopp'),'email_template',SHOPP_ADMIN_ERR,array('template'=>$templatefile));
+
+	}
+
+	// Sanitize line endings
+	$template = str_replace(array("\r\n","\r"),"\n",$template);
+	$f = explode("\n",$template);
+
 	while ( list($linenum,$line) = each($f) ) {
 		$line = rtrim($line);
-		// Data parse
+		// Data replacement
 		if ( preg_match_all("/\[(.+?)\]/",$line,$labels,PREG_SET_ORDER) ) {
 			while ( list($i,$label) = each($labels) ) {
 				$code = $label[1];
@@ -1496,18 +1548,20 @@ function shopp_email ($template,$data=array()) {
 		}
 
 		// Header parse
-		if ( preg_match("/^(.+?):\s(.+)$/",$line,$found) && !$in_body ) {
-			$header = $found[1];
-			$string = $found[2];
-			if (in_array(strtolower($header),$protected)) // Protect against header injection
-				$string = str_replace(array("\r","\n"),"",urldecode($string));
-			if ( strtolower($header) == "to" ) $to = $string;
-			else if ( strtolower($header) == "subject" ) $subject = $string;
-			else $headers .= $line."\n";
+		if (!$in_body && false !== strpos($line,':')) {
+			list($header,$value) = explode(':',$line);
+
+			// Protect against header injection
+			if (in_array(strtolower($header),$protected))
+				$value = str_replace("\n","",urldecode($value));
+
+			if ( 'to' == strtolower($header) ) $to = $value;
+			elseif ( 'subject' == strtolower($header) ) $subject = $value;
+			else $headers[] = $line;
 		}
 
 		// Catches the first blank line to begin capturing message body
-		if ( empty($line) ) $in_body = true;
+		if ( !$in_body && empty($line) ) $in_body = true;
 		if ( $in_body ) $message .= $line."\n";
 	}
 
@@ -1517,58 +1571,93 @@ function shopp_email ($template,$data=array()) {
 		$to = trim(rtrim($email,'>'));
 	}
 
-	if (!$debug) return wp_mail($to,$subject,$message,$headers);
-	else {
-		echo "<pre>";
-		echo "To: $to\n";
-		echo "Subject: $subject\n\n";
-		echo "Message:\n$message\n";
-		echo "Headers:\n";
-		print_r($headers);
-		echo "<pre>";
-		exit();
+	// If not already in place, setup default system email filters
+	if (!class_exists('ShoppEmailDefaultFilters')) {
+		require(SHOPP_MODEL_PATH.'/Email.php');
+		new ShoppEmailDefaultFilters();
 	}
+
+	// Message filters first
+	$headers = apply_filters('shopp_email_headers',$headers,$message);
+	$message = apply_filters('shopp_email_message',$message,$headers);
+
+	if (!$debug) return wp_mail($to,$subject,$message,$headers);
+
+	header('Content-type: text/plain');
+	echo "To: ".htmlspecialchars($to)."\n";
+	echo "Subject: $subject\n\n";
+	echo "Headers:\n";
+	print_r($headers);
+
+	echo "\nMessage:\n$message\n";
+	exit();
 }
 
 /**
- * Locates the Shopp content gateway pages in the WordPress posts table
+ * Locate the WordPress bootstrap file
  *
  * @author Jonathan Davis
- * @since 1.1
+ * @since 1.2
  *
- * @param array $pages Currently known page data
- * @return array
+ * @return string Absolute path to wp-load.php
  **/
-function shopp_locate_pages () {
-	global $wpdb;
+function shopp_find_wpload () {
+	global $table_prefix;
 
-	// No pages provided, use the Storefront definitions
-	$pages = Storefront::$_pages;
+	$loadfile = 'wp-load.php';
+	$wp_abspath = false;
 
-	// Find pages with Shopp-related main shortcodes
-	$search = "";
-	foreach ($pages as $page)
-		$search .= (!empty($search)?" OR ":"")."post_content LIKE '%".$page['shortcode']."%'";
-	$query = "SELECT ID,post_title,post_name,post_content FROM $wpdb->posts WHERE ($search) AND post_type='page'";
-	$results = $wpdb->get_results($query);
+	$syspath = explode('/',$_SERVER['SCRIPT_FILENAME']);
+	$uripath = explode('/',$_SERVER['SCRIPT_NAME']);
+	$rootpath = array_diff($syspath,$uripath);
+	$root = '/'.join('/',$rootpath);
 
-	// Match updates from the found results to our pages index
-	foreach ($pages as $key => &$page) {
-		// Convert Shopp 1.0 page definitions
-		if (!isset($page['shortcode']) && isset($page['content'])) $page['shortcode'] = $page['content'];
-		foreach ($results as $index => $post) {
-			if (strpos($post->post_content,$page['shortcode']) !== false) {
-				$page = array(
-					'id' => $post->ID,
-					'title' => $post->post_title,
-					'name' => $post->post_name,
-					'uri' => get_page_uri($post->ID)
-				);
-				break;
-			}
+	$filepath = dirname(!empty($_SERVER['SCRIPT_FILENAME'])?$_SERVER['SCRIPT_FILENAME']:__FILE__);
+
+	if ( file_exists(sanitize_path($root).'/'.$loadfile))
+		$wp_abspath = $root;
+
+	if ( isset($_SERVER['SHOPP_WP_ABSPATH'])
+		&& file_exists(sanitize_path($_SERVER['SHOPP_WP_ABSPATH']).'/'.$configfile) ) {
+		// SetEnv SHOPP_WPCONFIG_PATH /path/to/wpconfig
+		// and SHOPP_ABSPATH used on webserver site config
+		$wp_abspath = $_SERVER['SHOPP_WP_ABSPATH'];
+
+	} elseif ( strpos($filepath, $root) !== false ) {
+		// Shopp directory has DOCUMENT_ROOT ancenstor, find wp-config.php
+		$fullpath = explode ('/', sanitize_path($filepath) );
+		while (!$wp_abspath && ($dir = array_pop($fullpath)) !== null) {
+			if (file_exists( sanitize_path(join('/',$fullpath)).'/'.$loadfile ))
+				$wp_abspath = join('/',$fullpath);
 		}
-	}
-	return $pages;
+
+	} elseif ( file_exists(sanitize_path($root).'/'.$loadfile) ) {
+		$wp_abspath = $root; // WordPress install in DOCUMENT_ROOT
+	} elseif ( file_exists(sanitize_path(dirname($root)).'/'.$loadfile) ) {
+		$wp_abspath = dirname($root); // wp-config up one directory from DOCUMENT_ROOT
+    } else {
+        /* Last chance, do or die */
+        if (($pos = strpos($filepath, 'wp-content/plugins')) !== false)
+            $wp_abspath = substr($filepath, 0, --$pos);
+    }
+
+	$wp_load_file = sanitize_path($wp_abspath).'/'.$loadfile;
+
+	if ( $wp_load_file !== false ) return $wp_load_file;
+	return false;
+
+}
+/**
+ * Ties the key status and update key together
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @return void
+ **/
+function shopp_keybind ($data) {
+	if (!isset($data[1]) || empty($data[1])) $data[1] = str_repeat('0',40);
+	return pack(Lookup::keyformat(true),$data[0],$data[1]);
 }
 
 /**
@@ -1576,6 +1665,7 @@ function shopp_locate_pages () {
  *
  * @author Jonathan Davis
  * @since 1.0
+ * @deprecated Functionality moved to the Storefront
  *
  * @param array $data The data to populate the RSS feed with
  * @return string The RSS markup
@@ -1598,7 +1688,7 @@ function shopp_rss ($data) {
 	$xml .= "<title>".esc_html($data['title'])."</title>\n";
 	$xml .= "<description>".esc_html($data['description'])."</description>\n";
 	$xml .= "<link>".esc_html($data['link'])."</link>\n";
-	$xml .= "<language>en-us</language>\n";
+	$xml .= "<language>".get_option('rss_language')."</language>\n";
 	$xml .= "<copyright>".esc_html("Copyright ".date('Y').", ".$data['sitename'])."</copyright>\n";
 
 	if (is_array($data['items'])) {
@@ -1629,55 +1719,6 @@ function shopp_rss ($data) {
 }
 
 /**
- * Checks for prerequisite technologies needed for Shopp
- *
- * @author Jonathan Davis
- * @since 1.0
- *
- * @return boolean Returns true if all technologies are available
- **/
-function shopp_prereqs () {
-	$errors = array();
-
-	// Check PHP version, this won't appear much since syntax errors in earlier
-	// PHP releases will cause this code to never be executed
-	if (!version_compare(PHP_VERSION, '5.0','>='))
-		$errors[] = __("Shopp requires PHP version 5.0+.  You are using PHP version ").PHP_VERSION;
-
-	if (version_compare(PHP_VERSION, '5.1.3','=='))
-		$errors[] = __("Shopp will not work with PHP version 5.1.3 because of a critical bug in complex POST data structures.  Please upgrade PHP to version 5.1.4 or higher.");
-
-	// Check WordPress version
-	if (!version_compare(get_bloginfo('version'),'2.8','>='))
-		$errors[] = __("Shopp requires WordPress version 2.8+.  You are using WordPress version ").get_bloginfo('version');
-
-	// Check for cURL
-	if( !function_exists("curl_init") &&
-	      !function_exists("curl_setopt") &&
-	      !function_exists("curl_exec") &&
-	      !function_exists("curl_close") ) $errors[] = __("Shopp requires the cURL library for processing transactions securely. Your web hosting environment does not currently have cURL installed (or built into PHP).");
-
-	// Check for GD
-	if (!function_exists("gd_info")) $errors[] = __("Shopp requires the GD image library with JPEG support for generating gallery and thumbnail images.  Your web hosting environment does not currently have GD installed (or built into PHP).");
-	else {
-		$gd = gd_info();
-		if (!isset($gd['JPG Support']) && !isset($gd['JPEG Support'])) $errors[] = __("Shopp requires JPEG support in the GD image library.  Your web hosting environment does not currently have a version of GD installed that has JPEG support.");
-	}
-
-	if (!empty($errors)) {
-		$string .= '<style type="text/css">body { font: 13px/1 "Lucida Grande", "Lucida Sans Unicode", Tahoma, Verdana, sans-serif; } p { margin: 10px; }</style>';
-
-		foreach ($errors as $error) $string .= "<p>$error</p>";
-
-		$string .= '<p>'.__('Sorry! You will not be able to use Shopp.  For more information, see the <a href="http://docs.shopplugin.net/Installation" target="_blank">online Shopp documentation.</a>').'</p>';
-
-		trigger_error($string,E_USER_ERROR);
-		exit();
-	}
-	return true;
-}
-
-/**
  * Returns the platform appropriate page name for Shopp internal pages
  *
  * IIS rewriting requires including index.php as part of the page
@@ -1696,6 +1737,33 @@ function shopp_pagename ($page) {
 }
 
 /**
+ * Parses tag option strings or arrays
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param string|array $options URL-compatible query string or associative array of tag options
+ * @return array API-ready options list
+ **/
+function shopp_parse_options ($options) {
+
+	$paramset = array();
+	if ( empty($options) ) return $paramset;
+	if ( is_string($options) ) parse_str($options,$paramset);
+	else $paramset = $options;
+
+	$options = array();
+	foreach ( array_keys($paramset) as $key )
+		$options[ strtolower($key) ] = $paramset[$key];
+
+	if ( get_magic_quotes_gpc() )
+		$options = stripslashes_deep( $options );
+
+	return $options;
+
+}
+
+/**
  * Redirects the browser to a specified URL
  *
  * A wrapper for the wp_redirect function
@@ -1707,9 +1775,10 @@ function shopp_pagename ($page) {
  * @param boolean $exit (optional) Exit immediately after the redirect (defaults to true, set to false to override)
  * @return void
  **/
-function shopp_redirect ($uri,$exit=true) {
+function shopp_redirect ($uri,$exit=true,$status=302) {
 	if (class_exists('ShoppError'))	new ShoppError('Redirecting to: '.$uri,'shopp_redirect',SHOPP_DEBUG_ERR);
-	wp_redirect($uri);
+	header('Content-Length: 0');
+	wp_redirect($uri,$status);
 	if ($exit) exit();
 }
 
@@ -1762,31 +1831,54 @@ function shopp_safe_redirect($location, $status = 302) {
  * @return float The determined tax rate
  **/
 function shopp_taxrate ($override=null,$taxprice=true,$Item=false) {
-	$Settings = &ShoppSettings();
-	$locale = $Settings->get('base_operations');
+	$Taxes = new CartTax();
 	$rated = false;
 	$taxrate = 0;
-	$Taxes = new CartTax();
 
-	if ($locale['vat']) $rated = true;
-	if (!is_null($override)) $rated = $override;
-	if (!value_is_true($taxprice)) $rated = false;
+	if ( shopp_setting_enabled('tax_inclusive') ) $rated = true;
+	if ( ! is_null($override) ) $rated = $override;
+	if ( ! str_true($taxprice) ) $rated = false;
 
 	if ($rated) $taxrate = $Taxes->rate($Item);
 	return $taxrate;
 }
 
 /**
- * Sets the default timezone based on the WordPress option (if available)
+ * Helper to prefix theme template file names
  *
  * @author Jonathan Davis
- * @since 1.1
+ * @since 1.2
  *
- * @return void
+ * @param string $name The name of the template file
+ * @return string Prefixed template file
  **/
-function shopp_timezone () {
-	if (function_exists('date_default_timezone_set') && get_option('timezone_string'))
-		date_default_timezone_set(get_option('timezone_string'));
+function shopp_template_prefix ($name) {
+	return apply_filters('shopp_template_directory','shopp').'/'.$name;
+}
+
+/**
+ * Returns the URI for a template file
+ *
+ * @author Jonathan Davis
+ * @since 1.2
+ *
+ * @param string $name The name of the template file
+ * @return string The URL for the template file
+ **/
+function shopp_template_url ($name) {
+	$themepath = get_stylesheet_directory();
+	$themeuri = get_stylesheet_directory_uri();
+	$builtin = SHOPP_PLUGINURI.'/templates';
+	$template = rtrim(shopp_template_prefix(''),'/');
+
+	$path = "$themepath/$template";
+
+	if ('off' != shopp_setting('theme_templates')
+			&& is_dir(sanitize_path( $path )) )
+		$url = "$themeuri/$template/$name";
+	else $url = "$builtin/$name";
+
+	return sanitize_path($url);
 }
 
 /**
@@ -1794,6 +1886,7 @@ function shopp_timezone () {
  *
  * @author Jonathan Davis
  * @since 1.1
+ * @version 1.2
  *
  * @param mixed $request Additional URI requests
  * @param string $page The gateway page
@@ -1801,58 +1894,50 @@ function shopp_timezone () {
  * @return string The final URL
  **/
 function shoppurl ($request=false,$page='catalog',$secure=null) {
-	$dynamic = array("thanks","receipt","confirm-order");
-	$query = false;
 
-	$Settings =& ShoppSettings();
-	if (!$Settings->available) return;
+	$structure = get_option('permalink_structure');
+	$prettyurls = ('' != $structure);
 
-	// Get the currently indexed Shopp gateway pages
-	$pages = $Settings->get('pages');
-	if (empty($pages)) { // Hrm, no pages, attempt to rescan for them
-		// No WordPress actions, #epicfail
-		if (!function_exists('do_action')) return false;
-		do_action('shopp_reindex_pages');
-		$pages = $Settings->get('pages');
-		// Still no pages? WTH? #epicfailalso
-		if (empty($pages)) return false;
-	}
+	$path[] = Storefront::slug('catalog');
 
-	// Start with the site url
-	$siteurl = get_bloginfo('url');
-	if (strpos($siteurl,'?') !== false) list($siteurl,$query) = explode('?',$siteurl);
-	$siteurl = trailingslashit($siteurl);
-
-	// Rewrite as an HTTPS connection if necessary
-	if ($secure === false) $siteurl = str_replace('https://','http://',$siteurl);
-	elseif (($secure || is_shopp_secure()) && !SHOPP_NOSSL) $siteurl = str_replace('http://','https://',$siteurl);
-
-	// Determine WordPress gateway page URI path fragment
-	if (isset($pages[$page])) {
-		$path = $pages[$page]['uri'];
-		$pageid = $pages[$page]['id'];
+	// Build request path based on Storefront shopp_page requested
+	if ('images' == $page) {
+		$path[] = 'images';
+		if (!$prettyurls) $request = array('siid'=>$request);
 	} else {
-		if (in_array($page,$dynamic)) {
-			$target = $pages['checkout'];
-			if (SHOPP_PRETTYURLS) {
-				$catalog = empty($pages['catalog']['uri'])?$pages['catalog']['name']:$pages['catalog']['uri'];
-				$path = trailingslashit($catalog).$page;
-			} else $pageid = $target['id']."&shopp_proc=$page";
-		} elseif ('images' == $page) {
-			$target = $pages['catalog'];
-			$path = trailingslashit($target['uri']).'images';
-			if (!SHOPP_PRETTYURLS) $request = array('siid'=>$request);
-		} else {
-			$path = $pages['catalog']['uri'];
-			$pageid = $pages['catalog']['id'];
+		if ('confirm-order' == $page) $page = 'confirm'; // For compatibility with 1.1 addons
+		if (false !== $page)
+			$page_slug = Storefront::slug($page);
+		if ($page != 'catalog') {
+			if (!empty($page_slug)) $path[] = $page_slug;
 		}
 	}
 
-	if (SHOPP_PRETTYURLS) $url = user_trailingslashit($siteurl.$path);
-	else $url = isset($pageid)?add_query_arg('page_id',$pageid,$siteurl):$siteurl;
+	// Change the URL scheme as necessary
+	$scheme = null; // Full-auto
+	if ($secure === false) $scheme = 'http'; // Contextually forced off
+	elseif (($secure || is_ssl()) && !SHOPP_NOSSL) $scheme = 'https'; // HTTPS required
+
+	$url = home_url(false,$scheme);
+	if ($prettyurls) $url = home_url(join('/',$path),$scheme);
+	if (strpos($url,'?') !== false) list($url,$query) = explode('?',$url);
+	$url = trailingslashit($url);
+
+	if (!empty($query)) {
+		parse_str($query,$home_queryvars);
+		if ($request === false) {
+			$request = array();
+			$request = array_merge($home_queryvars,$request);
+		} else {
+			$request = array($request);
+			array_push($request,$home_queryvars);
+		}
+	}
+
+	if (!$prettyurls) $url = isset($page_slug)?add_query_arg('shopp_page',$page_slug,$url):$url;
 
 	// No extra request, return the complete URL
-	if (!$request && !$query) return $url;
+	if (!$request) return apply_filters('shopp_url',$url);
 
 	// Filter URI request
 	$uri = false;
@@ -1860,13 +1945,7 @@ function shoppurl ($request=false,$page='catalog',$secure=null) {
 	if (is_array($request) && isset($request[0])) $uri = array_shift($request);
 	if (!empty($uri)) $uri = join('/',array_map('urlencode',explode('/',$uri))); // sanitize
 
-	$url = user_trailingslashit(trailingslashit($url).$uri);
-
-	if (!empty($query)) {
-		parse_str($query,$queryvars);
-		if (empty($request) || is_string($request)) $request = $queryvars; // If empty or string, replace request with query vars
-		elseif (is_array($request))	$request = array_merge($request,$queryvars); // Otherwise merge them
-	}
+	$url = user_trailingslashit($url.$uri);
 
 	if (!empty($request) && is_array($request)) {
 		$request = array_map('urldecode',$request);
@@ -1874,7 +1953,7 @@ function shoppurl ($request=false,$page='catalog',$secure=null) {
 		$url = add_query_arg($request,$url);
 	}
 
-	return $url;
+	return apply_filters('shopp_url',$url);
 }
 
 /**
@@ -1910,21 +1989,33 @@ function sort_tree ($items,$parent=0,$key=-1,$depth=-1) {
 }
 
 /**
- * Converts natural language text to boolean values
+ * Evaluates natural language strings to boolean equivalent
  *
  * Used primarily for handling boolean text provided in shopp() tag options.
+ * All values defined as true will return true, anything else is false.
+ *
+ * Boolean values will be passed through.
+ *
+ * Replaces the 1.0-1.1 value_is_true()
  *
  * @author Jonathan Davis
- * @since 1.0
+ * @since 1.2
  *
- * @param string $value The natural language value
+ * @param string $string The natural language value
+ * @param array $istrue A list strings that are true
  * @return boolean The boolean value of the provided text
  **/
+function str_true ( $string, $istrue = array('yes', 'y', 'true','1','on','open') ) {
+	if (is_array($string)) return false;
+	if (is_bool($string)) return $string;
+	return in_array(strtolower($string),$istrue);
+}
+
+/**
+ * @deprecated
+ **/
 function value_is_true ($value) {
-	switch (strtolower($value)) {
-		case "yes": case "true": case "1": case "on": return true;
-		default: return false;
-	}
+	return str_true ($value);
 }
 
 /**
