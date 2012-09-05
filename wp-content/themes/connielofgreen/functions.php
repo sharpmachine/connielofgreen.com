@@ -394,19 +394,7 @@ function twentyten_widgets_init() {
 		'after_widget' => '</li>',
 		'before_title' => '<h3 class="widget-title">',
 		'after_title' => '</h3>',
-	) );
-	
-	// Area 3, located in the banner. Empty by default.
-	register_sidebar( array(
-		'name' => __( 'Banner Widget Area', 'twentyten' ),
-		'id' => 'banner-widget-area',
-		'description' => __( 'The banner widget area', 'twentyten' ),
-		'before_widget' => '<li id="%1$s" class="widget-container %2$s">',
-		'after_widget' => '</li>',
-		'before_title' => '<p class="title">',
-		'after_title' => '</p>',
-	) );
-
+	) );	
 
 }
 /** Register sidebars by running twentyten_widgets_init() on the widgets_init hook. */

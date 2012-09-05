@@ -78,61 +78,7 @@
   position: absolute;
   top: -15px;
   left: 0;
-}
-#banner #categories ul,
-#banner #categories ul li {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-#banner #categories ul li {
-  position: relative;
-  /*	&:hover
-							{
-								ul
-								{
-									display: inherit;
-								}
-							}*/
-
-}
-#banner #categories ul li a {
-  display: block;
   background: transparent url('../images/categories-bar.png') no-repeat 0 0;
   width: 40px;
   height: 332px;
-}
-#banner #categories ul li ul {
-  position: absolute;
-  top: 15px;
-  left: 38px;
-  height: 300px;
-  width: 800px;
-  overflow: hidden;
-  display: none;
-}
-#banner #categories ul li ul li {
-  float: left;
-  background: rgba(0, 0, 0, 0.7);
-  width: 196px;
-  height: 300px;
-  margin-left: 1px;
-}
-#banner #categories ul li ul li .title {
-  font-family: "Georgia", serif;
-  color: #FFF;
-  text-transform: uppercase;
-  margin: 0;
-  padding: 10px;
-  margin: 10px;
-  background: transparent url('../images/category-bar.png') no-repeat bottom center;
-}
-#banner #categories ul li ul li a {
-  background: none;
-  color: #FFF;
-  padding: 5px 20px;
-  width: inherit;
-  height: auto;
-  display: block;
-  float: none;
 }

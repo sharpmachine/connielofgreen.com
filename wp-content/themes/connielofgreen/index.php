@@ -5,17 +5,7 @@
 				<div id="banner-container">
 					<div id="banner">
 							<div id="categories">
-								<ul>
-									<li><a href="#" class="banner"></a>
-										<?php if ( is_active_sidebar( 'banner-widget-area' ) ) : ?>
-										<ul>
-											<?php dynamic_sidebar( 'banner-widget-area' ); ?>
-										</ul>
-									</li>
-								</ul>
-										<?php endif; ?>
-									</li>
-								</ul>
+								
 							</div><!-- #categories -->
 	
 							<div class="slides_container">
@@ -69,7 +59,7 @@
 				<div id="starpro-info">
 					<h3>Treatment</h3>
 						<div id="starpro-hzlogo">
-							<img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="117" height="149" alt="Logo2">
+							<a href="<?php bloginfo('url'); ?>/starpro"><img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="117" height="149" alt="Logo2"></a>
 						</div>
 					<p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor.</p>
 				</div>
