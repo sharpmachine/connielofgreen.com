@@ -17,7 +17,7 @@
 <?php if ( have_posts() ) while ( have_posts() ) : the_post(); ?>
 
 				<div id="post-<?php the_ID(); ?>" <?php post_class(); ?>>
-					<h2 class="page-title">Slingstone Authors</h2>
+					<h2 class="page-title"><?php the_title(); ?></h2>
 
 					<div class="entry-content">
 						<div class="author-headshot">
@@ -31,7 +31,6 @@
 ?>"><img src="<?php bloginfo('template_directory'); ?>/images/books-by-author.png" width="129" height="18" alt="Books By Author"></a>
 						</div>
 
-				<h3 class="author-name-single"><?php the_title(); ?></h3>
 				<?php the_content(); ?>
 				<!--<h3 class="clear">Books by <?php the_title(); ?></h3>-->
 					</div><!-- .entry-content -->

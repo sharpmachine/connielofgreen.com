@@ -12,7 +12,7 @@ get_header(); ?>
 		the_post();
 ?>
 
-			<h2 class="page-title">Slingstone Authors</h2>
+			<h2 class="page-title">Authors</h2>
 
 <?php
 	/* Since we called the_post() above, we need to

@@ -58,10 +58,9 @@
 				
 				<div id="starpro-info">
 					<h3>Treatment</h3>
-						<div id="starpro-hzlogo">
-							<a href="<?php bloginfo('url'); ?>/starpro"><img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="117" height="149" alt="Logo2"></a>
-						</div>
-					<p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor.</p>
+					<div id="starpro-hzlogo">
+						<a href="<?php bloginfo('url'); ?>/starpro"><img src="<?php bloginfo('template_directory'); ?>/images/logo2.png" width="117" height="149" alt="Logo2"></a>
+					</div>
 				</div>
 		
 			</div><!-- .center-content -->

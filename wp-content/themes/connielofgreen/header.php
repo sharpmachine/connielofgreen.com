@@ -78,7 +78,7 @@
 	<header role="banner">
 		<hgroup>
 			<div id="logo">
-				<a href="<?php bloginfo('url'); ?>"><img src="<?php bloginfo('template_directory'); ?>/images/logo.png" width="254" height="57" alt="Logo"></a>
+				<a href="<?php bloginfo('url'); ?>"><img src="<?php bloginfo('template_directory'); ?>/images/logo.png" width="254" height="58" alt="Logo"></a>
 			</div>
 			
 			<nav id="access" role="navigation">
