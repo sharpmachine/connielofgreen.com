@@ -11,9 +11,6 @@
 		
 	</h2>
 	
-	
-	<p><?php shopp('category','subcategory-list','hierarchy=true&showall=true&class=subcategories&dropdown=1'); ?></p>
-	
 	<span><?php shopp('catalog','orderby-list','dropdown=on&title=Sort by'); ?></span>
 
 	<div class="alignright"><?php shopp('category','pagination','show=10'); ?></div>
