@@ -26,7 +26,7 @@
 							<a href="<?php bloginfo('url'); ?>/shop/tag/<?php 
 		$split_name = explode(" ",the_title('','',false));
 		echo $split_name[0];
-		echo "+";
+		echo "-";
 		echo $split_name[1];
 ?>"><img src="<?php bloginfo('template_directory'); ?>/images/books-by-author.png" width="129" height="18" alt="Books By Author"></a>
 						</div>
