@@ -23,7 +23,7 @@
 						<div class="author-headshot">
 							<img src="<?php the_field('author_headshot'); ?>" alt="<?php the_title(); ?>" width="125" height="125" class="alignleft">
 							<a href="<?php bloginfo('url'); ?>/contact"><img src="<?php bloginfo('template_directory'); ?>/images/speaking-request.png" width="117" height="18" alt="Speaking Request"></a>
-							<a href="<?php bloginfo('url'); ?>/shop/tag/<?php 
+							<a href="<?php bloginfo('url'); ?>/store/tag/<?php 
 		$split_name = explode(" ",the_title('','',false));
 		echo $split_name[0];
 		echo "-";
