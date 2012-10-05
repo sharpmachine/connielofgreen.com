@@ -21,7 +21,7 @@
 		<legend>Ship to</legend>
 		<address><big><?php shopp('purchase','firstname'); ?> <?php shopp('purchase','lastname'); ?></big><br />
 		<?php shopp('purchase','shipaddress'); ?><br />
-		<?php shopp('purchase','shipxaddress'); ?>
+		<?php shopp('purchase','shipxaddress'); ?><br />
 		<?php shopp('purchase','shipcity'); ?>, <?php shopp('purchase','shipstate'); ?> <?php shopp('purchase','shippostcode'); ?><br />
 		<?php shopp('purchase','shipcountry'); ?></address>
 		
