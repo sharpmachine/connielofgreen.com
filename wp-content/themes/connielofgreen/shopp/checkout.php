@@ -130,7 +130,7 @@
 		<?php endif; ?>
 		<li></li>
 		<li>
-		<div class="inline"><label for="marketing"><?php shopp('checkout','marketing','title='); ?> Yes, I would like to receive e-mail updates and special offers!</label></div>
+		<!-- <div class="inline"><label for="marketing"><?php shopp('checkout','marketing','title='); ?> Yes, I would like to receive e-mail updates and special offers!</label></div> -->
 		</li>
 	</ul>
 	<p class="submit"><?php shopp('checkout','submit','value=Submit Order'); ?></p>

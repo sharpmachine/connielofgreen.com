@@ -6,7 +6,8 @@
 		<?php if (is_page('shop')): ?>
 				<?php the_title(); ?>
 			<?php else: ?>
-				<?php shopp('category','name'); ?>
+				<?php // shopp('category','name'); ?>
+				Connie's Products
 		<?php endif; ?>
 		
 	</h2>
