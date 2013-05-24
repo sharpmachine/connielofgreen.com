@@ -123,6 +123,39 @@ class Jetpack_Comments extends Highlander_Comments_Base {
 		parent::setup_filters();
 
 		add_filter( 'comment_post_redirect', array( $this, 'capture_comment_post_redirect_to_reload_parent_frame' ), 100 );
+		add_filter( 'get_avatar',            array( $this, 'get_avatar' ), 10, 4 );
+	}
+
+	/**
+	 * Get the comment avatar from Gravatar, Twitter, or Facebook
+	 *
+	 * @since JetpackComments (1.4)
+	 * @param string $avatar Current avatar URL
+	 * @param string $comment Comment for the avatar
+	 * @param int $size Size of the avatar
+	 * @param string $default Not used
+	 * @return string New avatar
+	 */
+	public function get_avatar( $avatar, $comment, $size, $default ) {
+		if ( ! isset( $comment->comment_post_ID ) || ! isset( $comment->comment_ID ) ) {
+			// it's not a comment - bail
+			return $avatar;
+		}
+	
+		if ( false === strpos( $comment->comment_author_url, '/www.facebook.com/' ) && false === strpos( $comment->comment_author_url, '/twitter.com/' ) ) {
+			// It's neither FB nor Twitter - bail
+			return $avatar;
+		}
+	
+		// It's a FB or Twitter avatar
+		$foreign_avatar = get_comment_meta( $comment->comment_ID, 'hc_avatar', true );
+		if ( empty( $foreign_avatar ) ) {
+			// Can't find the avatar details - bail
+			return $avatar;
+		}
+	
+		// Return the FB or Twitter avatar
+		return preg_replace( '#src=([\'"])[^\'"]+\\1#', 'src=\\1' . esc_url( $this->photon_avatar( $foreign_avatar, $size ) ) . '\\1', $avatar );
 	}
 
 	/** Output Methods ********************************************************/
@@ -380,6 +413,7 @@ class Jetpack_Comments extends Highlander_Comments_Base {
 				$comment_meta['hc_post_as']         = 'wordpress';
 				$comment_meta['hc_avatar']          = stripslashes( $_POST['hc_avatar'] );
 				$comment_meta['hc_foreign_user_id'] = stripslashes( $_POST['hc_userid'] );
+				$comment_meta['hc_wpcom_id_sig']    = stripslashes( $_POST['hc_wpcom_id_sig'] ); //since 1.9
 				break;
 
 			case 'jetpack' :
@@ -463,10 +497,10 @@ h1 span {
 <script type="text/javascript">
 try {
 	window.parent.location = <?php echo json_encode( $url ); ?>;
-	window.parent.location.reload();
+	window.parent.location.reload( true );
 } catch ( e ) {
 	window.location = <?php echo json_encode( $url ); ?>;
-	window.location.reload();
+	window.location.reload( true );
 }
 ellipsis = document.getElementById( 'ellipsis' );
 function toggleEllipsis() {

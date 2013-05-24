@@ -41,6 +41,11 @@ function wpcf7_messages() {
 			'default' => __( 'Validation errors occurred. Please confirm the fields and submit it again.', 'wpcf7' )
 		),
 
+		'spam' => array(
+			'description' => __( "Submission was referred to as spam", 'wpcf7' ),
+			'default' => __( 'Failed to send your message. Please try later or contact the administrator by another method.', 'wpcf7' )
+		),
+
 		'accept_terms' => array(
 			'description' => __( "There are terms that the sender must accept", 'wpcf7' ),
 			'default' => __( 'Please accept the terms to proceed.', 'wpcf7' )
@@ -163,15 +168,11 @@ function wpcf7_upload_dir( $type = false ) {
 	&& ( ! isset( $switched ) || $switched === false ) ) {
 		$dir = ABSPATH . UPLOADS;
 		$url = trailingslashit( $siteurl ) . UPLOADS;
-	}
 
-	if ( is_multisite() && ! $main_override
-	&& ( ! isset( $switched ) || $switched === false ) ) {
-
-		if ( defined( 'BLOGUPLOADDIR' ) )
+		if ( is_multisite() && defined( 'BLOGUPLOADDIR' ) ) {
 			$dir = untrailingslashit( BLOGUPLOADDIR );
-
-		$url = str_replace( UPLOADS, 'files', $url );
+			$url = str_replace( UPLOADS, 'files', $url );
+		}
 	}
 
 	$uploads = apply_filters( 'wpcf7_upload_dir', array( 'dir' => $dir, 'url' => $url ) );
@@ -217,6 +218,7 @@ function wpcf7_l10n() {
 		'hi_IN' => __( 'Hindi', 'wpcf7' ),
 		'hu_HU' => __( 'Hungarian', 'wpcf7' ),
 		'id_ID' => __( 'Indonesian', 'wpcf7' ),
+		'ga_IE' => __( 'Irish', 'wpcf7' ),
 		'it_IT' => __( 'Italian', 'wpcf7' ),
 		'ja' => __( 'Japanese', 'wpcf7' ),
 		'ko_KR' => __( 'Korean', 'wpcf7' ),

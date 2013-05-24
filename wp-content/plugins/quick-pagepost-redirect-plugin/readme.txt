@@ -1,20 +1,21 @@
 === Quick Page/Post Redirect Plugin ===
 Contributors: Don Fischer
-Donate link: http://www.fischercreativemedia.com/wordpress-plugins/donate/
-Tags: redirect, 301, 302, meta, post, plugin, page, forward, re-direct, nofollow, menu links, posts, pages, admin, 404, custom post types, nav menu
+Donate link: http://www.fischercreativemedia.com/donations/
+Tags: redirect, 301, 302, meta, post, plugin, page, forward, re-direct, nofollow, menu links, posts, pages, admin, 404, custom post types, nav menu, import, export, restore
 Requires at least: 3.1
-Tested up to: 3.3.2
-Stable tag: 4.2.3
+Tested up to: 3.4.2
+Stable tag: trunk
 
 Redirect Pages/Posts to another page/post or external URL. Has edit box as well as global options. Specify the redirect Location and type. For PHP5+
 
 == Description ==
-
-It adds an option box to the edit section where you can specify the redirect location and type of redirect that you want, temporary, permanent, or meta. See below for additional features added. 
+Version 5.0.2.
+This plugin adds adds an option box to the edit section where you can specify the redirect location and type of redirect that you want, temporary, permanent, or meta. See below for additional features added. 
 
 = Features: = 
 * Works with new WordPress menus
 * Works with new WordPress Custom Post Types (set option on settings page)
+* jQuery integration for more enhanced re-writes (set option on settings page).
 * You can set a redirect page or menu link to open in a new window (will not work on permalinks)
 * You can add a *rel="nofollow"* attribute to the page or menu link of the redirect (will not work on permalinks)
 * You can completely re-write the URL for the redirect so it takes the place of the default page URL (rewrite the href link)
@@ -22,20 +23,24 @@ It adds an option box to the edit section where you can specify the redirect loc
 * Redirect Location can be to another WordPress page/post or any other website with an external URL. 
 * Redirect can use a full URL path, the post or page ID, permalink or page-name (not available for Quick Redirects method).
 * Option Screen to set global overrides like turning off all redirects at once, setting a global destination link, make all redirect open in a new window, etc.
-* View a summary of all individual redirected pages/posts or custom post types that are currently set up.
+* View a summary of all redirected pages/posts or custom post types and Quick Redirects that are currently set up.
+* Plugin Clean up functions for those who decide they may want to remove all plugin data.
+* Import/Export of redirects for backup, or to bulk add redirects.
+* Built-in FAQs/Help that can be updated daily with relevant questions.
 
-This plugin is not compatible with WordPress versions less than 2.5. Requires PHP 5+.
+This plugin is not compatible with WordPress versions less than 3.1. Requires PHP 5+.
 
-*PLEASE NOTE:* A new page or post needs to be Published in order for the redirect to happen. It WILL work on a DRAFT Status Post/Page ONLY, and I mean ONLY, if the Post/Page has FIRST been Published and the re-saved as a Draft. 
+*PLEASE NOTE:* A new page or post needs to be Published in order for Page/Post redirect to happen. It WILL work on a DRAFT Status Post/Page ONLY, and I mean ONLY, if the Post/Page has FIRST been Published and the re-saved as a Draft. This does not apply to Quick Redirects.
 
 = TROUBLESHOOTING: =
 * To include custom post types, check the setting on the main plugin option page.
 * If you check the box for "Show Redirect URL below" on the edit page, please note that you MUST use the full URL in the Redirect URL box. If you do not, you may experience some odd links and 404 pages, as this option changes the Permalink for the page/post to the EXACT URL you enter in that field. (i.e., if you enter '2' in the field, it will redirect to 'http://2' which is not the same as 'http://yoursite.com/?p=2').
 * If your browser tells you that your are in an infinite loop, check to make sure you do not have pages redirecting to another page that redirects back to the initial page. That WILL cause an infinite loop.
-* If you are using the Quick 301 Redirects method to do your redirects, be sure that your Request URL starts with a / and is relative to the root (i.e., http://mysite.com/test/ would have /test/ in the request field).
-* Links in page/post content and Permalinks will not open in a new window or add the rel=nofollow. That is because the theme template actually sets up the links by calling "the_permalink()" function so add these elements is not consistently possible so it has been excluded from the functionality.
+* If you are using the Quick Redirects method to do your redirects, be sure that your Request URL starts with a / and is relative to the root (i.e., http://mysite.com/test/ would have /test/ in the request field).
+* Links in page/post content and Permalinks will not open in a new window or add the rel=nofollow. That is because the theme template actually sets up the links by calling "the_permalink()" function so adding these elements is not consistently possible. You can however, have the attempt to use a jQuery replace to try to fix the issue - to do this enable the jQuery option in the settings.
 * If your page or post is not redirecting, this is most likely because something else like the theme functions file or another plugin is outputting the header BEFORE the plugin can perform the redirect. This can be tested by turning off all plugins except the Quick Page/Post Redirect Plugin and testing if the redirect works. 9 out of 10 times, a plugin or bad code is the culprit.
-* We have tested the plugin in dozens of themes and alongside a whole lot more plugins. In our experience, (with exception to a few bugs) most of the time another plugin is the problem. If you do notice a problem, please let us know at plugins@fischercreativemedia.com - along with the WP version, theme you are using and plugins you have installed - and we will try to troubleshoot the problem. 
+* We have tested the plugin in dozens of themes and alongside a whole lot more plugins. In our experience, (with exception to a few bugs from time to time) most of the time another plugin is the problem. If you do notice a problem, please let us know at plugins@fischercreativemedia.com - along with the WP version, theme you are using and plugins you have installed - and we will try to troubleshoot the problem. 
+* Check the FAQs/Help located in the Plugin menu for more up to date issues and fixes.
 
 == Installation ==
 
@@ -52,6 +57,8 @@ This plugin is not compatible with WordPress versions less than 2.5. Requires PH
 1. You can create a redirect with the 'Quick Redirects' option located in the Admin Settings menu.
 
 == Frequently Asked Questions ==
+** SEE A LIST OF MORE UP TO DATE FAQS IN THE PLUGIN MENU ITSELF ** 
+
 = With 3.0s new menu structure, isn't your plugin now obsolete? =
 Yes, and No. Mostly No.
 Here is why - with WordPress 3.0, comes the new menu structure, but only a handful of themes actually have the menu structure already integrated into theme. This means that there are tons of themes out there that still need to use the the old way until they can update their theme template pages and functions to turn on the menu capability.
@@ -68,10 +75,10 @@ If you had a link on a site that went to http://yoursite.com/aboutme.html you ca
 The functionality is located in the REDIRECT MENU under Quick Redirects. The old URL goes in the Request field and the to new URL goes in the Destination field. Simple and Quick!
 
 = Can I add 'rel="nofollow" attribute to the redirect link? =
-YES, you can add a ' rel="nofollow" ' attribute for the redirect link. Simply check the "add rel=nofollow" box when setting up the redirect on the page/post edit page. Note - this option is not available for the Quick Redirects method or for permalinks and link within post content.
+YES, you can add a ' rel="nofollow" ' attribute for the redirect link. Simply check the "add rel=nofollow" box when setting up the redirect on the page/post edit page. Note - this option is only available for the Quick Redirects method when the 'use with jQuery' functionality is enabled in the settings.
 
 = Can I make the redirect open in a new window? =
-YES, you can make the redirect link open in a new window. Simply check the "Open in a new window" box when setting up the redirect on the page/post edit page. Note - this option is not available for the Quick Redirects method or for permalinks and link within post content.
+YES, you can make the redirect link open in a new window. Simply check the "Open in a new window" box when setting up the redirect on the page/post edit page. Note - this option is only available for the Quick Redirects method when the 'use with jQuery' functionality is enabled in the settings.
 
 = I want to just have the link for the redirecting page/post show the new redirect link in the link, not the old one, can I do that? =
 YES, you can hide the original page link and have it replaced with the redirect link. Any place the theme calls either "wp_page_links", "post_links" or "page_links" functions, the plugin can replace the original link with the new one. Simply check the "Show Redirect URL" box when setting up the redirect on the page/post edit page. Note - this option is not available for the Quick Redirects method. 
@@ -108,17 +115,43 @@ Still not sure? Try 302 for now - at least until you have a little time to read 
 = Should I use a full URL with http:// or https:// ? =
 Yes, you can, but you do not always need to. If you are redirecting to an external URL, then yes. If you are just redirecting to another page or post on your site, then no, it is not needed. When in doubt, use the entire URL.
 
+= That's all the FAQs you have? =
+NO it isn't! Check the plugin FAQs/Help page for a more up to date list of Frequently Asked Questions. The plugin now has a live feed of FAQs that can be updated regularly. If you have something you thin we should add, please let us know.
+
 
 == Screenshots ==
 
-1. The Redirect Menu and available option pages (updated for version 4.0).
-2. Quick 301 Redirects Page (Added in version 1.8).
-3. Main settings and Options page (new in version 4.0)
-4. Summary of redirects page (new in version 4.0)
+1. New FAQs/Help Page. This is updated off an RSS feed so it can be updated regularly with fixs and common questions.
+2. Setting Page. Includes new Import and Export features.
+3. More detailed view of Import/Export Feature.
+4. Plugin Clean Up feature. You can delete ALL plugin data!
+5. Quick Redirects setup page.
+5. Summary of redirects plugin page.
 
 == Changelog ==
-= 4.2.3 =
-* Fix WP_PLUGIN_URL and replace with plugins_url() to help with redirects on SSL. (01/01/2012)
+= 5.0.2 =
+* Bug fixes and jQuery now set to off until issues are resolved.
+* Set Case Sensetive to on by default - Some people having issues with infinite loops.
+
+= 5.0.1 =
+* Fix to jQuery conflict issue.
+
+= 5.0 =
+* Added jQuery version check to ensure no problmes with themes forcing older versions of jQuery
+* Added a few warning /info messages to Quick Redirects page.
+* Redirect summary was updated to display Quick Redirects as well as individual redirects. Now it is easier to see at a glance what redirects you have set up.
+* Rewrite of Quick Redirects functions to allow selecting Open in New Window (NW) and rel=nofollow (NF) as long as 'use jQuery' is selected. 
+* Added "use jQuery" option on settings page - on by default after upgrade
+* Added jQuery redirect replace, target="_blank", and rel="nofollow" to increase success for additional options (mainly Quick redirects).
+* Changed out WP_PLUGIN_URL for plugins_url() to help resolve errors in redirects for SSL/https
+* Changed the way custom post types are handled.These are now on by default for new users - or users who have not specifically set to off.
+* The ability to turn off the Plugin Meta Box for any post type was added (admin permissions required).
+* Import and Export features were added to allow for backup of existing Quick Redirects, Restoring a backup or adding bulk redirects.
+* Plugin clean-up features were added to completely remove either Page/Post meta data (for regular redirects), Quick Redirects, or both.
+* Several filter and action hooks were added to help users better integrate the plugin into their theme, should they need additional functionality.
+* New FAQs/Help page with items provided by an RSS feed, so we can easily update FAQs when common questions/issues arise.
+* Query String data is now preserved for Quick Redirects (thanks to Jon Wilson for the contribution).
+* Case insensitivity option was added for Quick Redirects (thanks to Brian DiChiara for the contribution).
 
 = 4.2.2 =
 * Fix some embarrasing spelling errors.(07/14/2011)
@@ -202,6 +235,5 @@ Yes, you can, but you do not always need to. If you are redirecting to an extern
 * Initial Plugin creation (7/1/2009)
 
 == Upgrade Notice ==
-
-= 4.2.3 =
-Fix for SSL sites - replaces WP_PLUGIN_URL constant with plugins_url() funsction for proper URL Protocol return. 
+= 5.0.1 =
+Fix to jQuery issue in versions 5.0 and 5.0.1 that caused some jQuery features to malfunction on frontend of site and updated default settingq for use with jQuery (default to off) and Case Seneitive (default to on).

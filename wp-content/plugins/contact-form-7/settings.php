@@ -24,7 +24,7 @@ function wpcf7_load_modules() {
 		return false;
 
 	while ( ( $module = readdir( $dh ) ) !== false ) {
-		if ( substr( $module, -4 ) == '.php' )
+		if ( substr( $module, -4 ) == '.php' && substr( $module, 0, 1 ) != '.' )
 			include_once $dir . '/' . $module;
 	}
 }
@@ -67,7 +67,8 @@ function wpcf7() {
 		'processing_within' => '',
 		'widget_count' => 0,
 		'unit_count' => 0,
-		'global_unit_count' => 0 );
+		'global_unit_count' => 0,
+		'result' => array() );
 }
 
 function wpcf7_load_plugin_textdomain() {
