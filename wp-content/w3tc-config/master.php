@@ -41,9 +41,9 @@ return array(
 		10 => '\\bfound_rows\\(\\)',
 		11 => '\\bw3tc_request_data\\b',
 	),
-	'objectcache.enabled' => false,
+	'objectcache.enabled' => true,
 	'objectcache.debug' => false,
-	'objectcache.engine' => 'file',
+	'objectcache.engine' => 'apc',
 	'objectcache.file.gc' => 3600,
 	'objectcache.file.locking' => false,
 	'objectcache.memcached.servers' => array(
@@ -84,7 +84,7 @@ return array(
 	'pgcache.enabled' => true,
 	'pgcache.comment_cookie_ttl' => 1800,
 	'pgcache.debug' => false,
-	'pgcache.engine' => 'file_generic',
+	'pgcache.engine' => 'apc',
 	'pgcache.file.gc' => 3600,
 	'pgcache.file.nfs' => false,
 	'pgcache.file.locking' => false,
@@ -377,6 +377,7 @@ return array(
 	'varnish.enabled' => false,
 	'varnish.debug' => false,
 	'varnish.servers' => array(
+		0 => '',
 	),
 	'browsercache.enabled' => true,
 	'browsercache.no404wp' => false,
@@ -414,7 +415,7 @@ return array(
 	'browsercache.other.etag' => false,
 	'browsercache.other.w3tc' => true,
 	'browsercache.other.replace' => false,
-	'browsercache.timestamp' => '1360171213',
+	'browsercache.timestamp' => '1369424333',
 	'mobile.enabled' => true,
 	'mobile.rgroups' => array(
 		'high' => array(
@@ -609,7 +610,7 @@ return array(
 	'notes.root_rules' => true,
 	'notes.rules' => true,
 	'notes.pgcache_rules_wpsc' => true,
-	'notes.support_us' => true,
+	'notes.support_us' => false,
 	'notes.no_curl' => true,
 	'notes.no_zlib' => true,
 	'notes.zlib_output_compression' => true,
